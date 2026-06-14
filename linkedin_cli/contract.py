@@ -105,6 +105,13 @@ def feed_data(
     }
 
 
+def activity_data(post: Post) -> dict[str, Any]:
+    """Build `read.activity` data."""
+    return {
+        "post": post_to_contract(post, source="unofficial"),
+    }
+
+
 def profile_data(profile: Profile) -> dict[str, Any]:
     """Build `read.profile` data."""
     return {

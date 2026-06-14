@@ -20,6 +20,7 @@ from .browser import BrowserActionError
 from .client import LinkedInClient, LinkedInClientError
 from .config import AppConfig, load_config
 from .constants import COOKIE_REQUIRED_NAMES
+from .contract import activity_data
 from .contract import auth_status_data
 from .contract import envelope
 from .contract import error_envelope
@@ -684,6 +685,84 @@ def read_search(
         return
 
     console.print(build_search_table(results, title=f"Search: {query}"))
+
+
+@read.command("activity")
+@click.argument("identifier")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+@click.pass_context
+def read_activity(
+    ctx: click.Context,
+    identifier: str,
+    as_json: bool,
+    output_file: Optional[str],
+) -> None:
+    """Fetch one LinkedIn activity as SNS JSON Contract v1."""
+    request = _contract_request(identifier=identifier, dry_run=False)
+    try:
+        post = _client_from_ctx(ctx).get_activity(identifier)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(
+                command="read.activity",
+                source="unofficial",
+                request=request,
+                exc=exc,
+            )
+        _handle_error(exc)
+    payload = envelope(
+        command="read.activity",
+        source="unofficial",
+        request=request,
+        data=activity_data(post),
+    )
+    if as_json:
+        _emit_contract(payload, output_file=output_file)
+        return
+    _write_output(output_file, to_contract_json(payload))
+    print_post_detail(post, console=console)
+
+
+@read.command("profile-posts")
+@click.argument("identifier")
+@click.option("--limit", type=int, default=None, help="Maximum number of posts to fetch.")
+@click.option("--cursor", type=str, default=None, help="Opaque pagination cursor.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+@click.pass_context
+def read_profile_posts(
+    ctx: click.Context,
+    identifier: str,
+    limit: Optional[int],
+    cursor: Optional[str],
+    as_json: bool,
+    output_file: Optional[str],
+) -> None:
+    """Fetch posts for a LinkedIn profile as SNS JSON Contract v1."""
+    request = _contract_request(identifier=identifier, limit=limit, cursor=cursor, dry_run=False)
+    try:
+        posts = _client_from_ctx(ctx).get_profile_posts(identifier, limit=limit)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(
+                command="read.profile_posts",
+                source="unofficial",
+                request=request,
+                exc=exc,
+            )
+        _handle_error(exc)
+    payload = envelope(
+        command="read.profile_posts",
+        source="unofficial",
+        request=request,
+        data=feed_data(posts, cursor=cursor),
+    )
+    if as_json:
+        _emit_contract(payload, output_file=output_file)
+        return
+    _write_output(output_file, to_contract_json(payload))
+    print_post_table(posts, console=console, title=f"Posts by {identifier}")
 
 
 @cli.command()

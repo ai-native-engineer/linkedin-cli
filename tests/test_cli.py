@@ -239,6 +239,41 @@ def test_read_feed_json_contract_cookie_conflict(monkeypatch) -> None:
     assert payload["error"]["details"] == {"auth_kind": "cookie_session"}
 
 
+def test_read_activity_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["read", "activity", "urn:li:activity:123456", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "read.activity"
+    assert payload["source"] == "unofficial"
+    assert payload["request"] == {"identifier": "urn:li:activity:123456", "dry_run": False}
+    assert payload["data"]["post"]["id"] == "urn:li:activity:123456"
+
+
+def test_read_profile_posts_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["read", "profile-posts", "jane-doe", "--limit", "5", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "read.profile_posts"
+    assert payload["source"] == "unofficial"
+    assert payload["request"] == {
+        "identifier": "jane-doe",
+        "limit": 5,
+        "cursor": None,
+        "dry_run": False,
+    }
+    assert payload["data"]["posts"][0]["id"] == "urn:li:activity:123456"
+
+
 def test_read_feed_session_rejected_maps_to_auth_expired(monkeypatch) -> None:
     runner = CliRunner()
     from linkedin_cli.client import LinkedInClientError

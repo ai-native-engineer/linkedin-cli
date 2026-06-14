@@ -87,6 +87,8 @@ Then run read commands:
 linkedin-cli read feed --limit 10 --json
 linkedin-cli read saved --limit 10 --json
 linkedin-cli read profile seungwon-aiden --json
+linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read search "AI engineer" --limit 10 --json
 ```
 
@@ -299,6 +301,8 @@ linkedin-cli auth oauth-login
 linkedin-cli read feed --limit 20 --json
 linkedin-cli read saved --limit 20 --json
 linkedin-cli read profile seungwon-aiden --json
+linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read search "product manager" --limit 10 --json
 
 linkedin-cli saved list --limit 20 --json
