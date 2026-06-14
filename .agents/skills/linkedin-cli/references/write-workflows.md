@@ -30,6 +30,8 @@ uv run linkedin-cli post text --text-file post.md --visibility public --dry-run 
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
 uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
+uv run linkedin-cli post document --text-file post.md --document deck.pdf --title "Deck" --dry-run --json
+uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --dry-run --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --dry-run --json
@@ -43,6 +45,8 @@ uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --json
 uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --json
 uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --json
+uv run linkedin-cli post document --text-file post.md --document deck.pdf --title "Deck" --json
+uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --json
@@ -56,6 +60,7 @@ Use official social action commands for comments, reactions, and comment state:
 uv run linkedin-cli comment list urn:li:ugcPost:123 --json
 uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
 uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated" --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
 uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
 uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
 uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
@@ -142,11 +147,22 @@ Use `--text-file <path>` for long posts. Use `--text-file -` only when the calle
 
 `post video` supports one local MP4 file. It initializes a Videos API upload, uploads the video bytes, finalizes the upload, then creates the post.
 
+`post document` supports one local PDF/DOC/DOCX/PPT/PPTX file. It initializes a Documents API upload, uploads the document, then creates the post.
+
+`post poll` supports non-sponsored polls with 2-4 options. Use `--duration one-day|three-days|seven-days|fourteen-days`.
+
 `post article` accepts `--url` plus optional `--title`, `--description`, and `--thumbnail`.
 
 `post get` and `post list` may require `r_member_social` or `r_organization_social`; a token with only `w_member_social` may receive `permission_denied`.
 
 `comment.*`, `reaction.*`, and `social.*` may require `w_member_social_feed`, `r_member_social_feed`, `w_organization_social_feed`, or `r_organization_social_feed`; a token with only `w_member_social` may receive `permission_denied`.
+
+Use the no-side-effect permission probe before debugging individual official API failures:
+
+```bash
+uv run linkedin-cli auth permission-check --json
+uv run linkedin-cli auth permission-check --post-id urn:li:ugcPost:123 --json
+```
 
 `post delete` accepts a `urn:li:share:*`, `urn:li:ugcPost:*`, numeric share id, or LinkedIn feed update URL. It rejects `urn:li:activity:*` because the official delete surface expects a post/share URN.
 
@@ -190,12 +206,14 @@ Current implementation details:
 - `post media` registers an official Images API upload, uploads one image, then publishes through Posts API
 - `post multi-image` registers and uploads 2-20 official Images API assets, then publishes through Posts API
 - `post video` initializes an official Videos API upload, uploads/finalizes the MP4, then publishes through Posts API
+- `post document` initializes an official Documents API upload, uploads the document, then publishes through Posts API
+- `post poll` publishes non-sponsored poll content through Posts API
 - `post article`, `post reshare`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
 - `post delete` deletes through the official LinkedIn Posts API
-- `comment list/get/create/update` use the official LinkedIn Comments API
+- `comment list/get/create/update/delete` use the official LinkedIn Comments API
 - `reaction list/get/create/delete` use the official LinkedIn Reactions API
 - `social metadata` and `social comments-state` use the official LinkedIn Social Metadata API
-- `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
+- `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post document --dry-run`, `post poll --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
 - `linkedin_cli.LinkedInWriteAPI` exposes the same official write surface to Python callers
 - legacy `post "..."` uses Playwright-backed browser fallback
 - `comment` uses Playwright-backed browser fallback
@@ -238,6 +256,7 @@ uv run playwright install chromium
 `Missing LinkedIn OAuth token file`
 
 - Set `LINKEDIN_ACCESS_TOKEN` and `LINKEDIN_AUTHOR_URN`, or write `~/.config/linkedin/oauth.json`
+- Run `uv run linkedin-cli auth permission-check --json` after token setup to verify the token without printing it
 
 `Unsupported image type for LinkedIn upload`
 

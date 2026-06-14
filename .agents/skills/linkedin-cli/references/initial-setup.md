@@ -75,8 +75,11 @@ That file must stay private and is expected to have `600` permissions. Never pri
 After setup, run safe checks:
 
 ```bash
+uv run linkedin-cli auth permission-check --json
 uv run linkedin-cli read feed --limit 3 --json
 uv run linkedin-cli read saved --limit 3 --json
+uv run linkedin-cli read comments urn:li:activity:123 --limit 3 --json
+uv run linkedin-cli read reactions urn:li:activity:123 --limit 3 --json
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
 uv run linkedin-cli post delete urn:li:share:123 --dry-run --json
 ```
@@ -107,13 +110,15 @@ uv run linkedin-cli post text --text-file post.md --visibility public --dry-run 
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 ```
 
-Media posts support one local image, 2-20 local images, or one local MP4 video:
+Media posts support one local image, 2-20 local images, one local MP4 video, or one local document:
 
 ```bash
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --json
 uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
 uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
+uv run linkedin-cli post document --text-file post.md --document deck.pdf --title "Deck" --dry-run --json
+uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --dry-run --json
 ```
 
 Article, reshare, update, and official read commands:
@@ -131,6 +136,7 @@ Official comment, reaction, and social metadata commands may need additional soc
 ```bash
 uv run linkedin-cli comment list urn:li:ugcPost:123 --json
 uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
 uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
 uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
 uv run linkedin-cli social metadata urn:li:ugcPost:123 --json

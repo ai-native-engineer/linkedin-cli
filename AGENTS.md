@@ -17,8 +17,8 @@ compatibility but are not the canonical surface.
 - `linkedin_cli/` — the package. `cli.py` holds the Click commands; `client.py`/`transport.py` drive
   the read path; `oauth*.py`/`publisher.py`/`api.py` drive the official write path;
   `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` is the Playwright fallback.
-- `.agents/skills/` — source for the three agent skills (`linkedin-cli`, `linkedin-cli-auth`,
-  `linkedin-cli-write`); `skills/` and `.claude/skills/` are symlinks to it. Also shipped as a Claude
+- `.agents/skills/` — source for the `linkedin-cli` agent skill (setup, auth, read, and write
+  workflows in one skill); `skills/` and `.claude/skills/` are symlinks to it. Also shipped as a Claude
   plugin via `.claude-plugin/` (`plugin.json` + `marketplace.json`). Edit the source, never the symlinks.
 - `tests/` — unit tests; no live LinkedIn session required.
 
@@ -56,10 +56,7 @@ uv run playwright install chromium   # only for browser fallback
 
 ## Operating Skills
 
-For command-level guidance, use the in-repo skills:
+For command-level guidance, use the in-repo `linkedin-cli` skill — it covers setup, auth and session
+diagnostics, read workflows, official publishing and safe mutations, and command selection.
 
-- `linkedin-cli` — setup, read workflows, command selection
-- `linkedin-cli-auth` — session, cookie, and OAuth diagnostics
-- `linkedin-cli-write` — posting and safe mutations
-
-See `skills/*/references/` for detailed cookbooks.
+See `skills/linkedin-cli/references/` for detailed cookbooks.

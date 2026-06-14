@@ -66,6 +66,13 @@ export LINKEDIN_CLIENT_SECRET='...'
 uv run linkedin-cli auth oauth-login
 ```
 
+Check official OAuth permissions without mutating LinkedIn:
+
+```bash
+uv run linkedin-cli auth permission-check --json
+uv run linkedin-cli auth permission-check --post-id urn:li:ugcPost:123 --json
+```
+
 Verify the saved token without printing it:
 
 ```bash
@@ -117,9 +124,17 @@ uv run linkedin profile-posts seungwon-aiden --max 10 --json --output tmp/posts.
 Inspect one activity:
 
 ```bash
+uv run linkedin-cli read activity urn:li:activity:123 --json
 uv run linkedin activity urn:li:activity:123 --json
 uv run linkedin activity 123 --json
 uv run linkedin activity https://www.linkedin.com/feed/update/urn:li:activity:123/ --json
+```
+
+Read comments and reactions for one activity through the unofficial fallback:
+
+```bash
+uv run linkedin-cli read comments urn:li:activity:123 --limit 20 --json
+uv run linkedin-cli read reactions urn:li:activity:123 --limit 20 --json
 ```
 
 ## Write Commands
@@ -153,6 +168,20 @@ uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Dem
 uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --json
 ```
 
+Official document publishing initializes a Documents API upload, uploads one PDF/DOC/DOCX/PPT/PPTX, then publishes a post:
+
+```bash
+uv run linkedin-cli post document --text-file post.md --document deck.pdf --title "Deck" --dry-run --json
+uv run linkedin-cli post document --text-file post.md --document deck.pdf --title "Deck" --json
+```
+
+Official poll publishing creates a non-sponsored poll with 2-4 options:
+
+```bash
+uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --duration three-days --dry-run --json
+uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --json
+```
+
 Official article, reshare, update, get, and list commands:
 
 ```bash
@@ -178,6 +207,7 @@ uv run linkedin-cli comment list urn:li:ugcPost:123 --json
 uv run linkedin-cli comment get urn:li:ugcPost:123 987654321 --json
 uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
 uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated comment" --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
 uv run linkedin-cli reaction list urn:li:ugcPost:123 --json
 uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
 uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
@@ -208,16 +238,22 @@ Use `--json` when:
 
 Use `--output <file>` only on commands that implement it:
 
+- `auth status`
+- `auth permission-check`
 - `read feed`
 - `read saved`
 - `saved list`
 - `read search`
 - `read profile`
+- `read activity`
+- `read comments`
+- `read reactions`
+- `read profile-posts`
 - `profile-posts`
 
-For the contract commands (`read feed`, `read saved`, `read search`, `read profile`, `saved list`), `--output` only writes a file when `--json` is also passed — the file contains the contract envelope, so always pair `--output` with `--json`. The flat commands (`feed`, `search`, `profile-posts`) write the file regardless of `--json`.
+For the contract commands (`auth status`, `auth permission-check`, `read feed`, `read saved`, `read search`, `read profile`, `read activity`, `read comments`, `read reactions`, `read profile-posts`, `saved list`), `--output` only writes a file when `--json` is also passed — the file contains the contract envelope, so always pair `--output` with `--json`. The flat commands (`feed`, `search`, `profile-posts`) write the file regardless of `--json`.
 
-Do not assume `profile` or `activity` support `--output`; they do not.
+Do not assume legacy `profile` or `activity` support `--output`; use canonical `read profile` or `read activity` when a contract file is needed.
 
 ## Identifier Handling
 
@@ -265,6 +301,8 @@ uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 uv run linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --json
 uv run linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --json
+uv run linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck" --json
+uv run linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:7323456789012345678 --text "worth reading" --json
 ```

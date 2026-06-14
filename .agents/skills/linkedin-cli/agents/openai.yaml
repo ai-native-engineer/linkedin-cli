@@ -1,7 +1,7 @@
 interface:
   display_name: "LinkedIn CLI"
-  short_description: "Set up and use linkedin-cli"
-  default_prompt: "Use $linkedin-cli for project-local LinkedIn CLI setup, OAuth/cookie auth, read commands, saved posts, official Posts API dry-runs, live publishing, official post retrieval/update/deletion, and sns-json-v1 output."
+  short_description: "Set up, authenticate, read, and publish with linkedin-cli"
+  default_prompt: "Use $linkedin-cli for all project-local LinkedIn CLI work: setup, OAuth/cookie auth and diagnostics (auth-status, permission-check, redirect/authwall/checkpoint, browser extraction), read commands (feed, saved, profiles, activities, comments, reactions, search), official Posts API dry-runs and live publishing (text, media, multi-image, video, document, poll, article, reshare, update, delete), reactions, comments, social metadata, browser fallback, and sns-json-v1 output."
 
 policy:
   allow_implicit_invocation: true

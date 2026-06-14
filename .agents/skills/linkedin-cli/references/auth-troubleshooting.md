@@ -4,11 +4,12 @@
 
 1. Resolution order
 2. Environment variables
-3. Config shape
-4. Interpreting `auth-status`
-5. Common failures
-6. Browser extraction
-7. Proxy and headless notes
+3. Official OAuth checks
+4. Config shape
+5. Interpreting `auth-status`
+6. Common failures
+7. Browser extraction
+8. Proxy and headless notes
 
 ## Resolution Order
 
@@ -22,7 +23,7 @@ Recommended baseline:
 
 ```bash
 export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; ...'
-uv run linkedin auth-status
+uv run linkedin-cli auth-status
 ```
 
 Minimal environment fallback:
@@ -30,7 +31,7 @@ Minimal environment fallback:
 ```bash
 export LINKEDIN_LI_AT='AQ...'
 export LINKEDIN_JSESSIONID='"ajax:123456789"'
-uv run linkedin auth-status
+uv run linkedin-cli auth-status
 ```
 
 ## Environment Variables
@@ -44,6 +45,11 @@ Relevant variables:
 - `LINKEDIN_HEADLESS`
 - `LINKEDIN_PROXY`
 - `LINKEDIN_CONFIG`
+- `LINKEDIN_ACCESS_TOKEN`
+- `LINKEDIN_AUTHOR_URN`
+- `LINKEDIN_OAUTH_FILE`
+- `LINKEDIN_CLIENT_ID`
+- `LINKEDIN_CLIENT_SECRET`
 
 Supported browser names:
 
@@ -52,6 +58,27 @@ Supported browser names:
 - `brave`
 - `edge`
 - `firefox`
+
+## Official OAuth Checks
+
+Official `post.*`, `comment.*`, `reaction.*`, and `social.*` commands use OAuth, not read cookies.
+
+Issue a token:
+
+```bash
+export LINKEDIN_CLIENT_ID='...'
+export LINKEDIN_CLIENT_SECRET='...'
+uv run linkedin-cli auth oauth-login
+```
+
+Probe the saved token without printing secrets or mutating LinkedIn:
+
+```bash
+uv run linkedin-cli auth permission-check --json
+uv run linkedin-cli auth permission-check --post-id urn:li:ugcPost:123 --json
+```
+
+Use the post-scoped form for `post get`, `comment.*`, `reaction.*`, and `social.*` permission failures.
 
 ## Config Shape
 
@@ -140,4 +167,4 @@ Use `LINKEDIN_PROXY` when LinkedIn traffic must go through a proxy.
 
 Use `LINKEDIN_HEADLESS=1` or `0` to influence browser fallback behavior for Playwright-backed write flows.
 
-Proxy configuration affects transport and auth validation, so re-run `uv run linkedin auth-status` after changing it.
+Proxy configuration affects transport and auth validation, so re-run `uv run linkedin-cli auth-status` after changing it.
