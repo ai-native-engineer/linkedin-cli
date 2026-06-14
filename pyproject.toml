@@ -9,7 +9,7 @@ description = "A terminal-first CLI for LinkedIn feed, profiles, search, and cor
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
-authors = [{ name = "jlebrero" }]
+authors = [{ name = "Aiden Ahn", email = "aiden.seungwon@gmail.com" }]
 keywords = ["linkedin", "cli", "social", "feed", "automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -45,15 +45,16 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/frizynn/linkedin-cli"
-Repository = "https://github.com/frizynn/linkedin-cli"
-Issues = "https://github.com/frizynn/linkedin-cli/issues"
-Documentation = "https://github.com/frizynn/linkedin-cli#readme"
-Changelog = "https://github.com/frizynn/linkedin-cli/blob/main/CHANGELOG.md"
-Security = "https://github.com/frizynn/linkedin-cli/security"
+Homepage = "https://github.com/ai-native-engineer/linkedin-cli"
+Repository = "https://github.com/ai-native-engineer/linkedin-cli"
+Issues = "https://github.com/ai-native-engineer/linkedin-cli/issues"
+Documentation = "https://github.com/ai-native-engineer/linkedin-cli#readme"
+Changelog = "https://github.com/ai-native-engineer/linkedin-cli/blob/main/CHANGELOG.md"
+Security = "https://github.com/ai-native-engineer/linkedin-cli/security"
 
 [project.scripts]
 linkedin = "linkedin_cli.cli:cli"
+linkedin-cli = "linkedin_cli.cli:cli"
 
 [tool.hatch.build.targets.wheel]
 packages = ["linkedin_cli"]
@@ -61,6 +62,7 @@ packages = ["linkedin_cli"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100

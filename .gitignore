@@ -21,3 +21,4 @@ cookies.txt
 auth.json
 *.session.json
 config.local.yaml
+prompts/

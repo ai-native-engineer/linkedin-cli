@@ -1,29 +1,23 @@
 # linkedin-cli skill
 
-Use this repo when you need LinkedIn workflows from the terminal.
+Project-local skill source lives at:
 
-## Preconditions
-
-- A valid logged-in LinkedIn session is already available in a supported browser, or
-- `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID` are exported in the environment.
-
-## Common commands
-
-```bash
-linkedin auth-status
-linkedin feed --max 20
-linkedin search "staff software engineer" --max 10
-linkedin profile satyanadella
-linkedin profile-posts satyanadella --max 10
-linkedin post "Hello from linkedin-cli"
-linkedin react urn:li:activity:123 --type like
-linkedin comment urn:li:activity:123 "great post"
+```text
+skills/linkedin-cli/SKILL.md
 ```
 
-## Guidance
+Use that skill for first-time setup, OAuth/cookie auth, read commands, saved-post workflows, official UGC post publishing, and `sns-json-v1` command selection.
 
-- Prefer `--json` when another tool or script will consume the output.
-- Use `LINKEDIN_PROXY` when requests need a proxy.
-- Use browser fallback only when HTTP mode cannot complete an action.
-- Fail fast on auth issues and tell the user to refresh cookies before retrying.
+Start from this directory:
 
+```bash
+uv sync --extra dev
+uv run linkedin-cli auth-status
+```
+
+Issue official publishing OAuth with:
+
+```bash
+agents-env run LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET -- \
+  uv run linkedin-cli auth oauth-login
+```

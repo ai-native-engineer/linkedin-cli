@@ -5,6 +5,7 @@ from requests import exceptions as requests_exceptions
 from linkedin_cli.client import LinkedInClient
 from linkedin_cli.client import LinkedInClientError
 from linkedin_cli.config import load_config
+from linkedin_cli.transport import LinkedInTransportError
 
 
 class _Session:
@@ -45,3 +46,60 @@ def test_retry_turns_redirect_loop_into_actionable_error(monkeypatch) -> None:
     assert "redirect loop" in message
     assert "LINKEDIN_COOKIE_HEADER" in message
     assert "voyager_feed=302" in message
+
+
+def test_public_id_from_url_handles_subpaths() -> None:
+    client = object.__new__(LinkedInClient)
+
+    assert client._public_id_from_url("https://www.linkedin.com/in/jane-doe/") == "jane-doe"
+    assert (
+        client._public_id_from_url("https://www.linkedin.com/in/jane-doe/recent-activity/all/")
+        == "jane-doe"
+    )
+    assert client._public_id_from_url("https://www.linkedin.com/feed/") == ""
+
+
+def test_profile_summary_does_not_fall_back_to_headline() -> None:
+    client = object.__new__(LinkedInClient)
+
+    profile = client._normalize_profile(
+        {"publicIdentifier": "jane-doe", "firstName": "Jane", "headline": "Builder"}
+    )
+
+    assert profile.headline == "Builder"
+    assert profile.summary == ""
+
+
+def test_saved_posts_falls_back_to_browser_when_transport_rejects_session(monkeypatch) -> None:
+    client = object.__new__(LinkedInClient)
+    client.config = load_config()
+    client.session = _Session()
+
+    class FakeTransport:
+        def get_saved_posts(self, limit):
+            raise LinkedInTransportError("LinkedIn redirected session-rejected")
+
+    class FakeBrowser:
+        def get_saved_posts(self, count):
+            assert count == 3
+            return [
+                {
+                    "entityUrn": "urn:li:activity:999",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:999/",
+                    "commentary": "Saved from browser",
+                    "author_name": "Jane Doe",
+                    "author_profile": "https://www.linkedin.com/in/jane-doe/",
+                    "savedByViewer": True,
+                }
+            ]
+
+    client.transport = FakeTransport()
+    client.browser = FakeBrowser()
+    monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
+
+    posts = client.get_saved_posts(limit=3)
+
+    assert len(posts) == 1
+    assert posts[0].urn == "urn:li:activity:999"
+    assert posts[0].author.name == "Jane Doe"
+    assert posts[0].saved_by_viewer is True

@@ -153,6 +153,13 @@ class LinkedInTransport:
     def get_feed_posts(self, limit: int) -> list[dict[str, Any]]:
         return self.fetch_feed_posts(limit)
 
+    def fetch_saved_posts(self, count: int) -> list[dict[str, Any]]:
+        response = self._request_saved_posts_page()
+        return self._parse_saved_posts_page(response.text, count)
+
+    def get_saved_posts(self, limit: int) -> list[dict[str, Any]]:
+        return self.fetch_saved_posts(limit)
+
     def _get_json(
         self,
         resource: str,
@@ -176,6 +183,28 @@ class LinkedInTransport:
         profile_url = f"{API_BASE_URL}/in/{public_id.strip('/')}/"
         response = self._request(
             profile_url,
+            headers={
+                "accept": (
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                    "image/avif,image/webp,*/*;q=0.8"
+                ),
+                "referer": f"{API_BASE_URL}/feed/",
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "same-origin",
+                "upgrade-insecure-requests": "1",
+            },
+            allow_redirects=False,
+        )
+        if response.status_code >= 400:
+            raise LinkedInTransportError(
+                f"LinkedIn returned HTTP {response.status_code} for {response.url}"
+            )
+        return response
+
+    def _request_saved_posts_page(self) -> requests.Response:
+        response = self._request(
+            f"{API_BASE_URL}/my-items/saved-posts/",
             headers={
                 "accept": (
                     "text/html,application/xhtml+xml,application/xml;q=0.9,"
@@ -238,6 +267,178 @@ class LinkedInTransport:
             normalized["displayPictureUrl"] = photo_url
 
         return normalized
+
+    def _parse_saved_posts_page(self, html: str, count: int) -> list[dict[str, Any]]:
+        payloads = self._extract_json_payloads(html)
+        posts: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for payload in payloads:
+            for post in self._extract_posts_from_payload(payload):
+                urn = self._first_value(post, "entityUrn", "entity_urn", "urn", "id")
+                url = self._first_value(post, "url", "navigationUrl", "permalink")
+                key = str(urn or url or len(posts))
+                if key in seen:
+                    continue
+                seen.add(key)
+                post.setdefault("savedByViewer", True)
+                posts.append(post)
+                if len(posts) >= count:
+                    return posts
+
+        if not posts:
+            raise LinkedInTransportError("LinkedIn saved posts page did not expose saved post data.")
+        return posts[:count]
+
+    def _extract_json_payloads(self, html: str) -> list[Any]:
+        soup = BeautifulSoup(html, "lxml")
+        payloads: list[Any] = []
+        code_map = {
+            tag.get("id"): tag.get_text()
+            for tag in soup.find_all("code")
+            if tag.get("id")
+        }
+        for text in code_map.values():
+            payload = self._load_json_text(text)
+            if payload is None:
+                continue
+            payloads.append(payload)
+            if isinstance(payload, dict):
+                body_id = payload.get("body")
+                if isinstance(body_id, str) and body_id in code_map:
+                    body_payload = self._load_json_text(code_map[body_id])
+                    if body_payload is not None:
+                        payloads.append(body_payload)
+
+        for tag in soup.find_all("script"):
+            text = tag.get_text(strip=True)
+            if not text or "linkedin" not in text.lower():
+                continue
+            payload = self._load_json_text(text)
+            if payload is not None:
+                payloads.append(payload)
+        return payloads
+
+    def _extract_posts_from_payload(self, payload: Any) -> list[dict[str, Any]]:
+        posts: list[dict[str, Any]] = []
+        if isinstance(payload, dict):
+            included = payload.get("included")
+            if isinstance(included, list):
+                posts.extend(self._parse_feed_like_posts(payload, included))
+            if self._looks_like_post(payload):
+                posts.append(self._normalize_embedded_post(payload))
+            for value in payload.values():
+                posts.extend(self._extract_posts_from_payload(value))
+        elif isinstance(payload, list):
+            for item in payload:
+                posts.extend(self._extract_posts_from_payload(item))
+        return posts
+
+    def _parse_feed_like_posts(self, payload: dict[str, Any], included: list[Any]) -> list[dict[str, Any]]:
+        raw_posts = [item for item in included if isinstance(item, dict)]
+        try:
+            parsed_posts = parse_list_raw_posts(raw_posts, API_BASE_URL)
+        except Exception:
+            parsed_posts = []
+        parsed_posts = [
+            post for post in parsed_posts if isinstance(post, dict) and (post.get("url") or post.get("entityUrn"))
+        ]
+        raw_urns = self._extract_element_refs(payload)
+        if parsed_posts and raw_urns:
+            try:
+                urns = parse_list_raw_urns(raw_urns)
+                sorted_posts = get_list_posts_sorted_without_promoted(urns, parsed_posts)
+                if sorted_posts:
+                    return sorted_posts
+            except Exception:
+                pass
+        return parsed_posts
+
+    def _extract_element_refs(self, payload: Any) -> list[str]:
+        refs: list[str] = []
+        if isinstance(payload, dict):
+            for key, value in payload.items():
+                if key == "*elements" and isinstance(value, list):
+                    refs.extend(str(item) for item in value if isinstance(item, str))
+                else:
+                    refs.extend(self._extract_element_refs(value))
+        elif isinstance(payload, list):
+            for item in payload:
+                refs.extend(self._extract_element_refs(item))
+        return refs
+
+    def _looks_like_post(self, payload: dict[str, Any]) -> bool:
+        urn = self._first_value(payload, "entityUrn", "entity_urn", "urn", "id")
+        url = self._first_value(payload, "url", "navigationUrl", "permalink")
+        if isinstance(url, str) and "/feed/update/" in url:
+            return True
+        if isinstance(urn, str) and ("activity" in urn or "share" in urn):
+            return any(key in payload for key in ("commentary", "content", "text", "actor", "author"))
+        return False
+
+    def _normalize_embedded_post(self, payload: dict[str, Any]) -> dict[str, Any]:
+        urn = self._first_value(payload, "entityUrn", "entity_urn", "urn", "id") or ""
+        url = self._first_value(payload, "url", "navigationUrl", "permalink") or ""
+        if not url and isinstance(urn, str) and urn.startswith("urn:li:"):
+            url = f"{API_BASE_URL}/feed/update/{urn}/"
+
+        actor = payload.get("actor") or payload.get("author") or {}
+        author_profile = self._first_value(actor, "navigationUrl", "profileUrl", "url")
+        author_name = (
+            self._extract_text(actor.get("name")) if isinstance(actor, dict) else ""
+        ) or self._extract_text(payload.get("author_name"))
+        if isinstance(actor, dict) and not author_profile:
+            public_id = self._first_value(actor, "publicIdentifier", "public_id")
+            if public_id:
+                author_profile = f"{API_BASE_URL}/in/{str(public_id).strip('/')}/"
+
+        return {
+            "entityUrn": urn,
+            "url": url,
+            "commentary": self._extract_text(
+                self._first_value(payload, "commentary", "content", "text", "body")
+            ),
+            "author_name": author_name,
+            "author_profile": author_profile or "",
+            "actor": actor if isinstance(actor, dict) else {},
+            "createdAt": self._first_value(payload, "createdAt", "created_at", "publishedAt") or "",
+            "reactionCount": self._first_value(payload, "reactionCount", "likes") or 0,
+            "commentCount": self._first_value(payload, "commentCount", "comments") or 0,
+            "shareCount": self._first_value(payload, "shareCount", "reposts", "shares") or 0,
+            "savedByViewer": True,
+        }
+
+    def _load_json_text(self, text: str) -> Any:
+        try:
+            return json.loads(text)
+        except (TypeError, json.JSONDecodeError):
+            return None
+
+    def _first_value(self, payload: Any, *keys: str) -> Any:
+        if not isinstance(payload, dict):
+            return None
+        for key in keys:
+            value = payload.get(key)
+            if value not in (None, "", [], {}):
+                return value
+        return None
+
+    def _extract_text(self, raw: Any) -> str:
+        if raw is None:
+            return ""
+        if isinstance(raw, str):
+            return raw.strip()
+        if isinstance(raw, dict):
+            for key in ("text", "string", "title", "value"):
+                text = self._extract_text(raw.get(key))
+                if text:
+                    return text
+            for value in raw.values():
+                text = self._extract_text(value)
+                if text:
+                    return text
+        if isinstance(raw, list):
+            return " ".join(part for part in (self._extract_text(item) for item in raw) if part).strip()
+        return str(raw).strip()
 
     def _find_profile_payload(self, code_map: dict[str, str], public_id: str) -> dict[str, Any]:
         vanity_markers = {

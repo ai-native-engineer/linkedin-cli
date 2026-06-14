@@ -67,6 +67,18 @@ class LinkedInClient:
             lambda: self._normalize_posts(self.transport.get_feed_posts(limit=count)),
         )
 
+    def get_saved_posts(self, limit: Optional[int] = None) -> list[Post]:
+        count = self._resolve_limit(limit)
+        try:
+            return self._retry(
+                "saved-posts",
+                lambda: self._normalize_posts(self.transport.get_saved_posts(limit=count)),
+            )
+        except LinkedInClientError:
+            if not self.config.browser.fallback_enabled:
+                raise
+            return self._normalize_posts(self.browser.get_saved_posts(count))
+
     def search(self, query: str, limit: Optional[int] = None) -> list[SearchResult]:
         count = self._resolve_limit(limit)
 
@@ -296,7 +308,7 @@ class LinkedInClient:
                 comments=comments_total,
                 reposts=reposts_total,
             ),
-            reactions=ReactionSummary(like=reactions_total),
+            reactions=ReactionSummary(like=reactions_total or 0),
             hashtags=self._extract_tokens(text or "", "#"),
             mentions=self._extract_tokens(text or "", "@"),
             liked_by_viewer=bool(self._extract_first(raw, "likedByViewer", "liked")),
@@ -314,7 +326,7 @@ class LinkedInClient:
             public_id=self._extract_first(raw, "publicIdentifier", "public_id") or "",
             full_name=full_name or "",
             headline=self._extract_first(raw, "headline", "occupation") or "",
-            summary=self._extract_text(raw.get("summary")) or self._extract_text(raw.get("headline")),
+            summary=self._extract_text(raw.get("summary")),
             location=self._extract_first(raw, "locationName", "geoLocationName", "location") or "",
             followers_count=self._extract_count(raw, "followerCount", "followersCount", "followers"),
             connections_count=self._extract_count(raw, "connectionsCount", "connections"),
@@ -344,8 +356,8 @@ class LinkedInClient:
             text=self._extract_text(raw.get("commentary")) or self._extract_text(raw),
             created_at=self._extract_first(raw, "createdAt", "created_at") or "",
             post_urn=post_urn,
-            reactions=ReactionSummary(like=self._extract_count(raw, "numLikes", "reactionCount")),
-            replies_count=self._extract_count(raw, "numReplies", "repliesCount"),
+            reactions=ReactionSummary(like=self._extract_count(raw, "numLikes", "reactionCount") or 0),
+            replies_count=self._extract_count(raw, "numReplies", "repliesCount") or 0,
         )
 
     def _normalize_reaction_summary(self, reactions: Iterable[dict[str, Any]]) -> ReactionSummary:
@@ -439,7 +451,7 @@ class LinkedInClient:
             metadata=raw,
         )
 
-    def _extract_count(self, raw: Any, *paths: str) -> int:
+    def _extract_count(self, raw: Any, *paths: str) -> Optional[int]:
         for path in paths:
             value = self._extract_first(raw, path)
             if value in (None, ""):
@@ -448,7 +460,7 @@ class LinkedInClient:
                 return int(value)
             except (TypeError, ValueError):
                 continue
-        return 0
+        return None
 
     def _extract_first(self, raw: Any, *paths: str):
         for path in paths:
@@ -509,4 +521,8 @@ class LinkedInClient:
             return ""
         parsed = urlparse(url)
         parts = [part for part in parsed.path.split("/") if part]
-        return parts[-1] if parts else ""
+        if "in" in parts:
+            index = parts.index("in")
+            if index + 1 < len(parts):
+                return parts[index + 1]
+        return ""

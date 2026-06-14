@@ -118,7 +118,7 @@ def build_post_table(posts: Iterable[Post], title: Optional[str] = None) -> Tabl
             [
                 "reactions: %s" % format_number(post.metrics.reactions or post.reactions.total),
                 "comments: %s" % format_number(post.metrics.comments or len(post.comments)),
-                "shares: %s" % format_number(post.metrics.reposts),
+                "shares: %s" % format_number(post.metrics.reposts or 0),
             ]
         )
         flags = []
@@ -181,7 +181,7 @@ def build_post_panel(post: Post, include_comments: bool = True) -> Panel:
     stats.add_column(style="green")
     stats.add_row("reactions", format_number(post.metrics.reactions or post.reactions.total))
     stats.add_row("comments", format_number(post.metrics.comments or len(post.comments)))
-    stats.add_row("shares", format_number(post.metrics.reposts))
+    stats.add_row("shares", format_number(post.metrics.reposts or 0))
     if post.metrics.impressions:
         stats.add_row("impressions", format_number(post.metrics.impressions))
     stats.add_row("reaction mix", format_reaction_summary(post.reactions))

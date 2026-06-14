@@ -158,12 +158,16 @@ class ReactionSummary:
 
 @dataclass
 class EngagementMetrics:
-    """Aggregated engagement data for a post."""
+    """Aggregated engagement data for a post.
 
-    reactions: int = 0
-    comments: int = 0
-    reposts: int = 0
-    impressions: int = 0
+    Read paths use ``None`` to mean "unknown" so the contract layer can emit
+    ``null`` (vs a confirmed ``0``) per the SNS JSON Contract metrics rule.
+    """
+
+    reactions: Optional[int] = None
+    comments: Optional[int] = None
+    reposts: Optional[int] = None
+    impressions: Optional[int] = None
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "EngagementMetrics":
@@ -189,8 +193,8 @@ class Profile:
     headline: str = ""
     summary: str = ""
     location: str = ""
-    followers_count: int = 0
-    connections_count: int = 0
+    followers_count: Optional[int] = None
+    connections_count: Optional[int] = None
     profile_url: str = ""
     photo_url: str = ""
     open_to_work: bool = False

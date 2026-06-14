@@ -158,3 +158,91 @@ def test_fetch_profile_parses_embedded_profile_payload(monkeypatch) -> None:
     assert payload["geoLocationName"] == "Buenos Aires"
     assert payload["publicProfileUrl"] == "https://www.linkedin.com/in/jane-doe/"
     assert payload["displayPictureUrl"] == "https://media.licdn.com/dms/image/v2/large.jpg"
+
+
+def test_normalize_embedded_post_builds_url_for_share_urn() -> None:
+    config = load_config()
+    jar = RequestsCookieJar()
+    jar.set("JSESSIONID", '"ajax:123"', domain=".linkedin.com", path="/")
+    session = AuthSession(cookie_jar=jar, source="env")
+    transport = LinkedInVoyagerTransport(session, config)
+
+    post = transport._normalize_embedded_post(
+        {
+            "entityUrn": "urn:li:share:777",
+            "commentary": "Shared body",
+            "author": {"name": {"text": "Jane Doe"}},
+        }
+    )
+
+    assert post["url"] == "https://www.linkedin.com/feed/update/urn:li:share:777/"
+
+    activity_post = transport._normalize_embedded_post(
+        {"entityUrn": "urn:li:activity:999", "commentary": "Body"}
+    )
+
+    assert activity_post["url"] == "https://www.linkedin.com/feed/update/urn:li:activity:999/"
+
+
+def test_fetch_saved_posts_parses_embedded_saved_payload(monkeypatch) -> None:
+    config = load_config()
+    jar = RequestsCookieJar()
+    jar.set("JSESSIONID", '"ajax:123"', domain=".linkedin.com", path="/")
+    session = AuthSession(cookie_jar=jar, source="env")
+    transport = LinkedInVoyagerTransport(session, config)
+    body = {
+        "included": [
+            {
+                "entityUrn": "urn:li:activity:999",
+                "url": "https://www.linkedin.com/feed/update/urn:li:activity:999/",
+                "commentary": {"text": "Saved post body"},
+                "actor": {
+                    "name": {"text": "Jane Doe"},
+                    "publicIdentifier": "jane-doe",
+                    "navigationUrl": "https://www.linkedin.com/in/jane-doe/",
+                },
+                "createdAt": 1760000000000,
+                "reactionCount": 3,
+                "commentCount": 2,
+                "shareCount": 1,
+            }
+        ]
+    }
+    html = (
+        "<html><body>"
+        '<code id="datalet-bpr-guid-1">'
+        + json.dumps({"body": "bpr-guid-1"})
+        + "</code>"
+        + '<code id="bpr-guid-1">'
+        + json.dumps(body)
+        + "</code>"
+        + "</body></html>"
+    )
+
+    monkeypatch.setattr(
+        transport,
+        "_request_saved_posts_page",
+        lambda: _html_response("https://www.linkedin.com/my-items/saved-posts/", html),
+    )
+
+    posts = transport.fetch_saved_posts(10)
+
+    assert posts == [
+        {
+            "entityUrn": "urn:li:activity:999",
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:999/",
+            "commentary": "Saved post body",
+            "author_name": "Jane Doe",
+            "author_profile": "https://www.linkedin.com/in/jane-doe/",
+            "actor": {
+                "name": {"text": "Jane Doe"},
+                "publicIdentifier": "jane-doe",
+                "navigationUrl": "https://www.linkedin.com/in/jane-doe/",
+            },
+            "createdAt": 1760000000000,
+            "reactionCount": 3,
+            "commentCount": 2,
+            "shareCount": 1,
+            "savedByViewer": True,
+        }
+    ]

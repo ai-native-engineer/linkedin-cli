@@ -13,7 +13,7 @@ The goal of this project is to keep the CLI practical, readable, and honest abou
 ## Development Setup
 
 ```bash
-git clone https://github.com/frizynn/linkedin-cli.git
+git clone https://github.com/ai-native-engineer/linkedin-cli.git
 cd linkedin-cli
 uv sync --extra dev
 uv run playwright install chromium
