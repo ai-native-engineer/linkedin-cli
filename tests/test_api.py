@@ -7,7 +7,10 @@ from linkedin_cli.api import DRY_RUN_IMAGE_URN
 from linkedin_cli.api import LinkedInWriteAPI
 from linkedin_cli.oauth import OAuthConfig
 from linkedin_cli.publisher import DeleteResult
+from linkedin_cli.publisher import GetPostResult
+from linkedin_cli.publisher import ListPostsResult
 from linkedin_cli.publisher import PublishResult
+from linkedin_cli.publisher import UpdateResult
 
 
 class FakePublisher:
@@ -15,25 +18,37 @@ class FakePublisher:
         self.text_calls = []
         self.image_calls = []
         self.delete_calls = []
+        self.article_calls = []
+        self.reshare_calls = []
+        self.update_calls = []
 
     def build_text_payload(self, *, text, visibility):
         body = text.strip()
         return {
             "author": "urn:li:person:abc",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": body},
-                },
-            },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": visibility.upper(),
-            },
+            "commentary": body,
+            "visibility": visibility.upper(),
         }
 
     def build_media_payload(self, *, text, visibility, image_urn):
         payload = self.build_text_payload(text=text, visibility=visibility)
         payload["content"] = {"media": {"id": image_urn}}
         return payload
+
+    def build_article_payload(self, *, text, visibility, url, title=None, description=None, thumbnail=None):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        payload["content"] = {"article": {"source": url}}
+        if title:
+            payload["content"]["article"]["title"] = title
+        return payload
+
+    def build_reshare_payload(self, *, text, visibility, parent):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        payload["reshareContext"] = {"parent": parent}
+        return payload
+
+    def build_update_payload(self, *, text):
+        return {"patch": {"$set": {"commentary": text.strip()}}}
 
     def post_text(self, *, text, visibility):
         self.text_calls.append({"text": text, "visibility": visibility})
@@ -68,6 +83,54 @@ class FakePublisher:
             raw={},
         )
 
+    def post_article(self, *, text, visibility, url, title=None, description=None, thumbnail=None):
+        self.article_calls.append(
+            {
+                "text": text,
+                "visibility": visibility,
+                "url": url,
+                "title": title,
+                "description": description,
+                "thumbnail": thumbnail,
+            }
+        )
+        return PublishResult(
+            post_id="urn:li:share:article",
+            url="https://www.linkedin.com/feed/update/urn:li:share:article/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def post_reshare(self, *, text, visibility, parent):
+        self.reshare_calls.append({"text": text, "visibility": visibility, "parent": parent})
+        return PublishResult(
+            post_id="urn:li:share:reshare",
+            url="https://www.linkedin.com/feed/update/urn:li:share:reshare/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def normalize_post_id(self, post_id):
+        return self.normalize_delete_post_id(post_id)
+
+    def update_post(self, *, post_id, text):
+        self.update_calls.append({"post_id": post_id, "text": text})
+        return UpdateResult(post_id="urn:li:share:789", updated_at="2026-06-15T00:00:00Z", raw={})
+
+    def get_post(self, *, post_id, view_context):
+        return GetPostResult(post_id=post_id, raw={"id": post_id, "viewContext": view_context})
+
+    def list_posts_by_author(self, *, author_urn=None, count=10, start=0, sort_by="LAST_MODIFIED", view_context="AUTHOR"):
+        author = author_urn or "urn:li:person:abc"
+        return ListPostsResult(
+            author_urn=author,
+            elements=[{"id": "urn:li:share:1"}],
+            paging={"count": count, "start": start},
+            raw={"elements": [{"id": "urn:li:share:1"}]},
+        )
+
 
 def _api(fake: FakePublisher) -> LinkedInWriteAPI:
     return LinkedInWriteAPI(
@@ -87,14 +150,12 @@ def test_plan_text_post_returns_programmatic_payload() -> None:
     plan = api.plan_text_post(text=" hello ", visibility="public")
 
     assert plan.command == "post.text"
-    assert plan.api == "linkedin.ugcPosts"
+    assert plan.api == "linkedin.posts"
     assert plan.text_length == 5
     assert plan.media_count == 0
     assert plan.author_urn == "urn:li:person:abc"
     assert plan.linkedin_version == "202605"
-    assert plan.payload["specificContent"]["com.linkedin.ugc.ShareContent"]["shareCommentary"] == {
-        "text": "hello"
-    }
+    assert plan.payload["commentary"] == "hello"
     assert plan.to_dict()["media_paths"] == []
 
 
@@ -104,7 +165,7 @@ def test_plan_image_post_uses_dry_run_image_placeholder() -> None:
     plan = api.plan_image_post(text=" hello image ", media_path="~/image.png", visibility="public")
 
     assert plan.command == "post.media"
-    assert plan.api == "linkedin.ugcPosts+assets"
+    assert plan.api == "linkedin.posts+images"
     assert plan.text_length == 11
     assert plan.media_count == 1
     assert plan.payload["content"]["media"]["id"] == DRY_RUN_IMAGE_URN
@@ -154,6 +215,66 @@ def test_delete_post_delegates_to_publisher() -> None:
 
     assert result.post_id == "urn:li:share:789"
     assert fake.delete_calls == [{"post_id": "urn:li:share:789"}]
+
+
+def test_plan_article_post_returns_programmatic_payload() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_article_post(
+        text=" article ",
+        url="https://example.com/post",
+        title="Example",
+        visibility="public",
+    )
+
+    assert plan.command == "post.article"
+    assert plan.api == "linkedin.posts"
+    assert plan.text_length == 7
+    assert plan.payload["content"]["article"] == {
+        "source": "https://example.com/post",
+        "title": "Example",
+    }
+
+
+def test_create_article_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.create_article_post(text="hello", url="https://example.com/post", visibility="public")
+
+    assert result.post_id == "urn:li:share:article"
+    assert fake.article_calls[0]["url"] == "https://example.com/post"
+
+
+def test_plan_reshare_post_returns_programmatic_payload() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_reshare_post(text=" share ", parent="urn:li:share:1", visibility="public")
+
+    assert plan.command == "post.reshare"
+    assert plan.api == "linkedin.posts"
+    assert plan.text_length == 5
+    assert plan.payload["reshareContext"] == {"parent": "urn:li:share:1"}
+
+
+def test_update_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.update_post(post_id="urn:li:share:789", text="updated")
+
+    assert result.updated_at == "2026-06-15T00:00:00Z"
+    assert fake.update_calls == [{"post_id": "urn:li:share:789", "text": "updated"}]
+
+
+def test_get_and_list_posts_delegate_to_publisher() -> None:
+    api = _api(FakePublisher())
+
+    post = api.get_post(post_id="urn:li:share:1", view_context="AUTHOR")
+    posts = api.list_posts_by_author(author_urn="urn:li:person:abc", count=1, start=0)
+
+    assert post.raw["id"] == "urn:li:share:1"
+    assert posts.elements == [{"id": "urn:li:share:1"}]
 
 
 def test_from_config_accepts_string_path(tmp_path, monkeypatch) -> None:

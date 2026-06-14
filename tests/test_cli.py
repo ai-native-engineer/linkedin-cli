@@ -13,7 +13,10 @@ from linkedin_cli.models import Profile
 from linkedin_cli.models import SearchResult
 from linkedin_cli.oauth_flow import OAuthLoginResult
 from linkedin_cli.publisher import DeleteResult
+from linkedin_cli.publisher import GetPostResult
+from linkedin_cli.publisher import ListPostsResult
 from linkedin_cli.publisher import PublishResult
+from linkedin_cli.publisher import UpdateResult
 
 
 @dataclass
@@ -236,6 +239,117 @@ def test_read_feed_json_contract_cookie_conflict(monkeypatch) -> None:
     assert payload["error"]["details"] == {"auth_kind": "cookie_session"}
 
 
+def test_read_feed_session_rejected_maps_to_auth_expired(monkeypatch) -> None:
+    runner = CliRunner()
+    from linkedin_cli.client import LinkedInClientError
+
+    class _RejectingClient:
+        def feed(self, limit=None):
+            raise LinkedInClientError(
+                "feed failed: LinkedIn redirected session-rejected for https://www.linkedin.com/x"
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: _RejectingClient())
+
+    result = runner.invoke(cli, ["read", "feed", "--limit", "5", "--json"])
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["error"]["code"] == "auth_expired"
+    assert payload["error"]["retryable"] is False
+    assert payload["error"]["details"] == {"auth_kind": "cookie_session"}
+
+
+def test_read_profile_and_unsave_auth_errors(monkeypatch) -> None:
+    runner = CliRunner()
+
+    def raise_auth_error(ctx):
+        raise AuthenticationError("No LinkedIn cookies found.")
+
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", raise_auth_error)
+
+    profile_result = runner.invoke(cli, ["read", "profile", "jane-doe", "--json"])
+    assert profile_result.exit_code == 2
+    profile_payload = json.loads(profile_result.output)
+    assert profile_payload["command"] == "read.profile"
+    assert profile_payload["error"]["code"] == "auth_missing"
+
+    unsave_result = runner.invoke(cli, ["saved", "unsave", "urn:li:activity:1", "--json"])
+    assert unsave_result.exit_code == 2
+    unsave_payload = json.loads(unsave_result.output)
+    assert unsave_payload["command"] == "saved.unsave"
+    assert unsave_payload["error"]["code"] == "auth_missing"
+
+
+def test_exit_codes_match_contract_buckets() -> None:
+    from linkedin_cli.cli import _exit_code_for_error
+
+    for code in ("auth_missing", "auth_expired", "invalid_request", "media_invalid",
+                 "not_found", "permission_denied", "post_rejected", "unsupported"):
+        assert _exit_code_for_error(code) == 2, code
+    for code in ("rate_limited", "upstream_unavailable", "upstream_changed", "media_upload_failed"):
+        assert _exit_code_for_error(code) == 3, code
+    for code in ("contract_error", "internal_error", "definitely_unknown"):
+        assert _exit_code_for_error(code) == 4, code
+
+
+def test_classify_session_rejected_client_error() -> None:
+    from linkedin_cli.cli import _classify_contract_error
+    from linkedin_cli.client import LinkedInClientError
+
+    code, retryable, details = _classify_contract_error(
+        LinkedInClientError("feed failed: LinkedIn redirected session-rejected for https://x")
+    )
+
+    assert code == "auth_expired"
+    assert retryable is False
+    assert details == {"auth_kind": "cookie_session"}
+
+
+def test_auth_status_json_contract_ready(monkeypatch) -> None:
+    runner = CliRunner()
+    from requests.cookies import RequestsCookieJar
+
+    from linkedin_cli.auth import AuthSession
+
+    jar = RequestsCookieJar()
+    jar.set("li_at", "SECRETVALUE", domain=".linkedin.com", path="/")
+    jar.set("JSESSIONID", '"ajax:1"', domain=".linkedin.com", path="/")
+    monkeypatch.setattr(
+        "linkedin_cli.cli.resolve_auth_session",
+        lambda config: AuthSession(cookie_jar=jar, source="env"),
+    )
+
+    result = runner.invoke(cli, ["auth", "status", "--json"])
+
+    assert result.exit_code == 0
+    assert "SECRETVALUE" not in result.output  # cookie values never leak
+    payload = json.loads(result.output)
+    assert payload["command"] == "auth.status"
+    assert payload["source"] == "unofficial"
+    auth = payload["data"]["auth"]
+    assert auth["state"] == "ready"
+    assert auth["required_missing"] == []
+    assert "li_at" in auth["cookie_names"]
+
+
+def test_auth_status_json_contract_missing(monkeypatch) -> None:
+    runner = CliRunner()
+
+    def raise_missing(config):
+        raise AuthenticationError("No LinkedIn cookies found.")
+
+    monkeypatch.setattr("linkedin_cli.cli.resolve_auth_session", raise_missing)
+
+    result = runner.invoke(cli, ["auth", "status", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["data"]["auth"]["state"] == "missing"
+    assert payload["data"]["auth"]["cookie_count"] == 0
+
+
 def test_post_text_dry_run_json_contract_output() -> None:
     runner = CliRunner()
 
@@ -259,7 +373,7 @@ def test_post_text_dry_run_json_contract_output() -> None:
     }
     assert payload["data"]["dry_run"] is True
     assert payload["data"]["post"] is None
-    assert payload["data"]["planned"]["api"] == "linkedin.ugcPosts"
+    assert payload["data"]["planned"]["api"] == "linkedin.posts"
 
 
 def test_auth_oauth_login_missing_client_id_json_contract(monkeypatch) -> None:
@@ -368,6 +482,12 @@ def test_post_text_publish_json_contract_output(monkeypatch) -> None:
     runner = CliRunner()
 
     class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
         def create_text_post(self, *, text, visibility):
             assert text == "hello"
             assert visibility == "public"
@@ -427,7 +547,7 @@ def test_post_media_dry_run_json_contract_output() -> None:
         "author": None,
     }
     assert payload["data"]["dry_run"] is True
-    assert payload["data"]["planned"]["api"] == "linkedin.ugcPosts+assets"
+    assert payload["data"]["planned"]["api"] == "linkedin.posts+images"
 
 
 def test_post_media_dry_run_reads_stdin_json_contract() -> None:
@@ -486,6 +606,12 @@ def test_post_media_publish_json_contract_output(monkeypatch) -> None:
     runner = CliRunner()
 
     class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
         def create_image_post(self, *, text, visibility, media_path):
             assert text == "hello"
             assert visibility == "public"
@@ -516,6 +642,195 @@ def test_post_media_publish_json_contract_output(monkeypatch) -> None:
     assert payload["source"] == "official"
     assert payload["data"]["post"]["id"] == "urn:li:share:456"
     assert payload["data"]["post"]["raw"]["request"]["media"] == {"image": "urn:li:image:abc"}
+
+
+def test_post_article_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "article",
+            "--text",
+            "hello article",
+            "--url",
+            "https://example.com/post",
+            "--title",
+            "Example",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.article"
+    assert payload["source"] == "official"
+    assert payload["data"]["planned"]["api"] == "linkedin.posts"
+    assert payload["data"]["planned"]["url"] == "https://example.com/post"
+
+
+def test_post_article_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_article_post(self, **kwargs):
+            assert kwargs["url"] == "https://example.com/post"
+            return PublishResult(
+                post_id="urn:li:share:article",
+                url="https://www.linkedin.com/feed/update/urn:li:share:article/",
+                created_at="2026-06-15T00:00:00Z",
+                visibility="public",
+                raw={"request": {"api": "linkedin.posts"}},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "article",
+            "--text",
+            "hello article",
+            "--url",
+            "https://example.com/post",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.article"
+    assert payload["data"]["post"]["id"] == "urn:li:share:article"
+
+
+def test_post_reshare_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["post", "reshare", "123", "--text", "resharing", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.reshare"
+    assert payload["data"]["planned"]["parent"] == "urn:li:share:123"
+
+
+def test_post_update_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        ["post", "update", "123", "--text", "updated", "--dry-run", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.update"
+    assert payload["data"]["planned"] == {
+        "id": "urn:li:share:123",
+        "text_length": 7,
+        "api": "linkedin.posts.update",
+    }
+
+
+def test_post_update_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def update_post(self, *, post_id, text):
+            assert post_id == "urn:li:share:789"
+            assert text == "updated"
+            return UpdateResult(
+                post_id="urn:li:share:789",
+                updated_at="2026-06-15T00:00:00Z",
+                raw={"status_code": 204},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(cli, ["post", "update", "urn:li:share:789", "--text", "updated", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.update"
+    assert payload["data"]["post"]["updated"] is True
+
+
+def test_post_get_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def get_post(self, *, post_id, view_context):
+            assert view_context == "AUTHOR"
+            return GetPostResult(post_id=post_id, raw={"id": post_id, "commentary": "hello"})
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(cli, ["post", "get", "urn:li:share:789", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.get"
+    assert payload["data"]["post"]["raw"]["commentary"] == "hello"
+
+
+def test_post_list_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def list_posts_by_author(self, **kwargs):
+            assert kwargs["count"] == 2
+            return ListPostsResult(
+                author_urn="urn:li:person:abc",
+                elements=[{"id": "urn:li:share:1"}],
+                paging={"count": 2, "start": 0},
+                raw={"elements": [{"id": "urn:li:share:1"}]},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(cli, ["post", "list", "--count", "2", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.list"
+    assert payload["data"]["posts"][0]["id"] == "urn:li:share:1"
 
 
 def test_post_delete_dry_run_json_contract_output() -> None:
@@ -549,6 +864,12 @@ def test_post_delete_publish_json_contract_output(monkeypatch) -> None:
     runner = CliRunner()
 
     class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
         def delete_post(self, *, post_id):
             assert post_id == "urn:li:share:789"
             return DeleteResult(

@@ -112,6 +112,10 @@ class LinkedInClient:
 
     def get_activity(self, identifier: str) -> Post:
         activity_urn = self.normalize_activity_urn(identifier)
+        if not activity_urn.startswith("urn:li:activity:"):
+            raise LinkedInClientError(
+                f"Activity lookup requires an activity URN; got {activity_urn}."
+            )
         activity_id = activity_urn.split(":")[-1]
 
         def run() -> Post:
@@ -141,6 +145,10 @@ class LinkedInClient:
 
     def react(self, identifier: str, reaction_type: str) -> str:
         activity_urn = self.normalize_activity_urn(identifier)
+        if not activity_urn.startswith("urn:li:activity:"):
+            raise LinkedInClientError(
+                f"Reactions require an activity URN; got {activity_urn}."
+            )
         activity_id = activity_urn.split(":")[-1]
         normalized = REACTION_TYPE_MAP.get(reaction_type.lower())
         if not normalized:
@@ -173,6 +181,8 @@ class LinkedInClient:
         return self._browser_result(self.browser.comment_on_post(self.activity_url(urn), text))
 
     def activity_url(self, activity_urn: str) -> str:
+        if activity_urn.startswith("urn:li:"):
+            return f"https://www.linkedin.com/feed/update/{activity_urn}/"
         activity_id = activity_urn.split(":")[-1]
         return f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}/"
 
@@ -192,13 +202,14 @@ class LinkedInClient:
         text = identifier.strip()
         if not text:
             raise LinkedInClientError("Activity identifier cannot be empty.")
-        if text.startswith("urn:li:activity:"):
+        prefixes = ("urn:li:activity:", "urn:li:share:", "urn:li:ugcPost:")
+        if text.startswith(prefixes):
             return text
         if text.isdigit():
             return f"urn:li:activity:{text}"
         if "linkedin.com" in text:
             for part in text.rstrip("/").split("/"):
-                if part.startswith("urn:li:activity:"):
+                if part.startswith(prefixes):
                     return part
             for part in reversed([segment for segment in text.rstrip("/").split("/") if segment]):
                 if part.isdigit():

@@ -14,18 +14,26 @@ from rich.console import Console
 from . import __version__
 from .auth import AuthenticationError
 from .auth import collect_auth_diagnostics
+from .auth import resolve_auth_session
 from .api import LinkedInWriteAPI
 from .browser import BrowserActionError
 from .client import LinkedInClient, LinkedInClientError
 from .config import AppConfig, load_config
+from .constants import COOKIE_REQUIRED_NAMES
+from .contract import auth_status_data
 from .contract import envelope
 from .contract import error_envelope
 from .contract import feed_data
+from .contract import post_create_dry_run_data
 from .contract import post_delete_dry_run_data
 from .contract import post_delete_success_data
+from .contract import post_get_success_data
+from .contract import post_list_success_data
 from .contract import post_media_dry_run_data
 from .contract import post_text_dry_run_data
 from .contract import post_text_success_data
+from .contract import post_update_dry_run_data
+from .contract import post_update_success_data
 from .contract import profile_data
 from .contract import saved_unsave_success_data
 from .contract import search_data
@@ -229,6 +237,7 @@ def _handle_contract_error(
     source: str,
     request: dict,
     exc: Exception,
+    output_file: Optional[str] = None,
 ) -> None:
     code, retryable, details = _classify_contract_error(exc)
     payload = error_envelope(
@@ -240,7 +249,9 @@ def _handle_contract_error(
         retryable=retryable,
         details=details,
     )
-    click.echo(to_contract_json(payload))
+    rendered = to_contract_json(payload)
+    _write_output(output_file, rendered)
+    click.echo(rendered)
     raise SystemExit(_exit_code_for_error(code)) from exc
 
 
@@ -317,6 +328,60 @@ def auth_status(ctx: click.Context) -> None:
 @cli.group("auth")
 def auth_group() -> None:
     """Manage LinkedIn CLI authentication."""
+
+
+@auth_group.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+@click.pass_context
+def auth_status_contract(ctx: click.Context, as_json: bool, output_file: Optional[str]) -> None:
+    """Report read-session cookie status as an SNS JSON Contract envelope."""
+    request = _contract_request(dry_run=False)
+    try:
+        session = resolve_auth_session(ctx.obj["config"])
+    except AuthenticationError:
+        session = None
+
+    if session is None:
+        data = auth_status_data(
+            state="missing",
+            cookie_count=0,
+            cookie_names=[],
+            cookie_domains=[],
+            required_missing=sorted(COOKIE_REQUIRED_NAMES),
+        )
+    else:
+        missing = sorted(name for name in COOKIE_REQUIRED_NAMES if not session.cookie_jar.get(name))
+        domains = sorted({cookie.domain for cookie in session.cookie_jar if cookie.domain})
+        data = auth_status_data(
+            state="ready" if not missing else "degraded",
+            cookie_count=session.cookie_count,
+            cookie_names=session.cookie_names,
+            cookie_domains=domains,
+            required_missing=missing,
+        )
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="auth.status",
+                source="unofficial",
+                request=request,
+                data=data,
+            ),
+            output_file=output_file,
+        )
+        return
+
+    auth = data["auth"]
+    console.print(
+        build_status_panel(
+            "Auth status",
+            auth["state"] == "ready",
+            f"state={auth['state']} | cookies={auth['cookie_count']} | "
+            f"missing={','.join(auth['required_missing']) or 'none'}",
+        )
+    )
 
 
 @auth_group.command("oauth-login")
@@ -473,6 +538,7 @@ def read_feed(
                 source="unofficial",
                 request=request,
                 exc=exc,
+                output_file=output_file,
             )
         _handle_error(exc)
 
@@ -515,6 +581,7 @@ def read_saved(
                 source="unofficial",
                 request=request,
                 exc=exc,
+                output_file=output_file,
             )
         _handle_error(exc)
 
@@ -555,6 +622,7 @@ def read_profile(
                 source="unofficial",
                 request=request,
                 exc=exc,
+                output_file=output_file,
             )
         _handle_error(exc)
 
@@ -599,6 +667,7 @@ def read_search(
                 source="unofficial",
                 request=request,
                 exc=exc,
+                output_file=output_file,
             )
         _handle_error(exc)
 
@@ -717,6 +786,7 @@ def saved_list(
                 source="unofficial",
                 request=request,
                 exc=exc,
+                output_file=output_file,
             )
         _handle_error(exc)
 
@@ -770,7 +840,7 @@ def saved_unsave(ctx: click.Context, identifier: str, as_json: bool) -> None:
 
 @cli.group("post", cls=LegacyPostGroup)
 def post_group() -> None:
-    """Create LinkedIn posts through Share on LinkedIn / UGC APIs."""
+    """Create or delete LinkedIn posts through official LinkedIn APIs."""
 
 
 @post_group.command("text")
@@ -802,7 +872,7 @@ def post_text(
     oauth_file: Optional[str],
     linkedin_version: Optional[str],
 ) -> None:
-    """Publish text through the official LinkedIn UGC Posts API."""
+    """Publish text through the official LinkedIn Posts API."""
     request = _contract_request(
         visibility=visibility,
         dry_run=dry_run,
@@ -847,17 +917,18 @@ def post_text(
             build_status_panel(
                 "Post dry-run OK",
                 True,
-                f"visibility={visibility} | text_length={len(text_body)} | api=linkedin.ugcPosts",
+                f"visibility={visibility} | text_length={len(text_body)} | api=linkedin.posts",
             )
         )
         return
 
     try:
-        result = _write_api_from_options(
+        with _write_api_from_options(
             author_urn=author_urn,
             oauth_file=oauth_file,
             linkedin_version=linkedin_version,
-        ).create_text_post(text=text_body, visibility=visibility)
+        ) as api:
+            result = api.create_text_post(text=text_body, visibility=visibility)
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -912,7 +983,7 @@ def post_media(
     oauth_file: Optional[str],
     linkedin_version: Optional[str],
 ) -> None:
-    """Publish one local image through LinkedIn's official Assets and UGC Posts APIs."""
+    """Publish one local image through LinkedIn's official Images and Posts APIs."""
     request = _contract_request(
         visibility=visibility,
         dry_run=dry_run,
@@ -980,22 +1051,23 @@ def post_media(
                 True,
                 (
                     f"visibility={visibility} | text_length={len(text_body)} | "
-                    f"media_count={len(media_paths)} | api=linkedin.ugcPosts+assets"
+                    f"media_count={len(media_paths)} | api=linkedin.posts+images"
                 ),
             )
         )
         return
 
     try:
-        result = _write_api_from_options(
+        with _write_api_from_options(
             author_urn=author_urn,
             oauth_file=oauth_file,
             linkedin_version=linkedin_version,
-        ).create_image_post(
-            text=text_body,
-            visibility=visibility,
-            media_path=media_paths[0],
-        )
+        ) as api:
+            result = api.create_image_post(
+                text=text_body,
+                visibility=visibility,
+                media_path=media_paths[0],
+            )
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -1017,6 +1089,440 @@ def post_media(
         )
         return
     console.print(build_status_panel("Post created", True, f"id={result.post_id}\nurl={result.url}"))
+
+
+@post_group.command("article")
+@click.option("--text", "text_body", required=False, help="Post body text.")
+@click.option(
+    "--text-file",
+    type=str,
+    default=None,
+    help="Read post body text from a UTF-8 file, or '-' for stdin.",
+)
+@click.option("--url", "article_url", required=True, help="Article URL to share.")
+@click.option("--title", type=str, default=None, help="Optional article title.")
+@click.option("--description", type=str, default=None, help="Optional article description.")
+@click.option("--thumbnail", type=str, default=None, help="Optional LinkedIn image URN thumbnail.")
+@click.option(
+    "--visibility",
+    type=click.Choice(["connections", "public"]),
+    default="public",
+    show_default=True,
+)
+@click.option("--dry-run", is_flag=True, help="Validate and print the planned official API request.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_article(
+    text_body: Optional[str],
+    text_file: Optional[str],
+    article_url: str,
+    title: Optional[str],
+    description: Optional[str],
+    thumbnail: Optional[str],
+    visibility: str,
+    dry_run: bool,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Publish an article/link post through the official LinkedIn Posts API."""
+    request = _contract_request(
+        visibility=visibility,
+        dry_run=dry_run,
+        media_count=0,
+        text_length=None,
+        url=article_url,
+        author=author_urn,
+    )
+    try:
+        text_body = _resolve_post_text(text_body, text_file)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.article", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    request["text_length"] = len(text_body)
+    if dry_run:
+        try:
+            plan = LinkedInWriteAPI.for_dry_run(
+                author_urn=author_urn,
+                linkedin_version=linkedin_version,
+            ).plan_article_post(
+                text=text_body,
+                visibility=visibility,
+                url=article_url,
+                title=title,
+                description=description,
+                thumbnail=thumbnail,
+            )
+        except Exception as exc:
+            if as_json:
+                _handle_contract_error(command="post.article", source="official", request=request, exc=exc)
+            _handle_error(exc)
+        payload = envelope(
+            command="post.article",
+            source="official",
+            request=request,
+            data=post_create_dry_run_data(
+                text=text_body,
+                visibility=plan.visibility,
+                media_count=0,
+                extra={"url": article_url, "api": plan.api},
+            ),
+        )
+        if as_json:
+            _emit_contract(payload)
+            return
+        console.print(
+            build_status_panel(
+                "Article post dry-run OK",
+                True,
+                f"visibility={visibility} | text_length={len(text_body)} | api=linkedin.posts",
+            )
+        )
+        return
+
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.create_article_post(
+                text=text_body,
+                visibility=visibility,
+                url=article_url,
+                title=title,
+                description=description,
+                thumbnail=thumbnail,
+            )
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.article", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.article",
+                source="official",
+                request=request,
+                data=post_text_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Article post created", True, f"id={result.post_id}\nurl={result.url}"))
+
+
+@post_group.command("reshare")
+@click.argument("parent")
+@click.option("--text", "text_body", required=False, help="Post body text.")
+@click.option(
+    "--text-file",
+    type=str,
+    default=None,
+    help="Read post body text from a UTF-8 file, or '-' for stdin.",
+)
+@click.option(
+    "--visibility",
+    type=click.Choice(["connections", "public"]),
+    default="public",
+    show_default=True,
+)
+@click.option("--dry-run", is_flag=True, help="Validate and print the planned official API request.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_reshare(
+    parent: str,
+    text_body: Optional[str],
+    text_file: Optional[str],
+    visibility: str,
+    dry_run: bool,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Reshare a post through the official LinkedIn Posts API."""
+    request = _contract_request(
+        parent=parent,
+        visibility=visibility,
+        dry_run=dry_run,
+        media_count=0,
+        text_length=None,
+        author=author_urn,
+    )
+    try:
+        text_body = _resolve_post_text(text_body, text_file)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.reshare", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    request["text_length"] = len(text_body)
+    if dry_run:
+        try:
+            plan = LinkedInWriteAPI.for_dry_run(
+                author_urn=author_urn,
+                linkedin_version=linkedin_version,
+            ).plan_reshare_post(text=text_body, parent=parent, visibility=visibility)
+        except Exception as exc:
+            if as_json:
+                _handle_contract_error(command="post.reshare", source="official", request=request, exc=exc)
+            _handle_error(exc)
+        payload = envelope(
+            command="post.reshare",
+            source="official",
+            request=request,
+            data=post_create_dry_run_data(
+                text=text_body,
+                visibility=plan.visibility,
+                media_count=0,
+                extra={"parent": plan.payload["reshareContext"]["parent"], "api": plan.api},
+            ),
+        )
+        if as_json:
+            _emit_contract(payload)
+            return
+        console.print(
+            build_status_panel(
+                "Reshare dry-run OK",
+                True,
+                f"parent={plan.payload['reshareContext']['parent']} | api=linkedin.posts",
+            )
+        )
+        return
+
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.create_reshare_post(text=text_body, parent=parent, visibility=visibility)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.reshare", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.reshare",
+                source="official",
+                request=request,
+                data=post_text_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Reshare created", True, f"id={result.post_id}\nurl={result.url}"))
+
+
+@post_group.command("update")
+@click.argument("post_id")
+@click.option("--text", "text_body", required=False, help="Replacement post commentary.")
+@click.option(
+    "--text-file",
+    type=str,
+    default=None,
+    help="Read replacement commentary from a UTF-8 file, or '-' for stdin.",
+)
+@click.option("--dry-run", is_flag=True, help="Validate and print the planned official API request.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_update(
+    post_id: str,
+    text_body: Optional[str],
+    text_file: Optional[str],
+    dry_run: bool,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Update post commentary through the official LinkedIn Posts API."""
+    request = _contract_request(id=post_id, dry_run=dry_run, text_length=None, author=author_urn)
+    try:
+        text_body = _resolve_post_text(text_body, text_file)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.update", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    request["text_length"] = len(text_body)
+    if dry_run:
+        try:
+            plan = LinkedInWriteAPI.for_dry_run(
+                author_urn=author_urn,
+                linkedin_version=linkedin_version,
+            ).plan_update_post(post_id=post_id, text=text_body)
+        except Exception as exc:
+            if as_json:
+                _handle_contract_error(command="post.update", source="official", request=request, exc=exc)
+            _handle_error(exc)
+        payload = envelope(
+            command="post.update",
+            source="official",
+            request=request,
+            data=post_update_dry_run_data(post_id=plan["post_id"], text=text_body),
+        )
+        if as_json:
+            _emit_contract(payload)
+            return
+        console.print(
+            build_status_panel(
+                "Post update dry-run OK",
+                True,
+                f"id={plan['post_id']} | text_length={len(text_body)} | api=linkedin.posts.update",
+            )
+        )
+        return
+
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.update_post(post_id=post_id, text=text_body)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.update", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.update",
+                source="official",
+                request=request,
+                data=post_update_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Post updated", True, f"id={result.post_id}"))
+
+
+@post_group.command("get")
+@click.argument("post_id")
+@click.option(
+    "--view-context",
+    type=click.Choice(["AUTHOR", "READER"], case_sensitive=False),
+    default="AUTHOR",
+    show_default=True,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_get(
+    post_id: str,
+    view_context: str,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Retrieve one post through the official LinkedIn Posts API."""
+    request = _contract_request(id=post_id, view_context=view_context.upper(), author=author_urn)
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.get_post(post_id=post_id, view_context=view_context.upper())
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.get", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.get",
+                source="official",
+                request=request,
+                data=post_get_success_data(result),
+            )
+        )
+        return
+    console.print(to_json(result.raw))
+
+
+@post_group.command("list")
+@click.option("--author", "author_urn", type=str, default=None, help="Author person or organization URN.")
+@click.option("--count", type=int, default=10, show_default=True, help="Number of posts to fetch, 1-100.")
+@click.option("--start", type=int, default=0, show_default=True, help="Pagination start offset.")
+@click.option(
+    "--sort-by",
+    type=click.Choice(["LAST_MODIFIED", "CREATED"], case_sensitive=False),
+    default="LAST_MODIFIED",
+    show_default=True,
+)
+@click.option(
+    "--view-context",
+    type=click.Choice(["AUTHOR", "READER"], case_sensitive=False),
+    default="AUTHOR",
+    show_default=True,
+)
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_list(
+    author_urn: Optional[str],
+    count: int,
+    start: int,
+    sort_by: str,
+    view_context: str,
+    as_json: bool,
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """List posts by author through the official LinkedIn Posts API."""
+    request = _contract_request(
+        author=author_urn,
+        count=count,
+        start=start,
+        sort_by=sort_by.upper(),
+        view_context=view_context.upper(),
+    )
+    try:
+        with _write_api_from_options(
+            author_urn=None,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.list_posts_by_author(
+                author_urn=author_urn,
+                count=count,
+                start=start,
+                sort_by=sort_by.upper(),
+                view_context=view_context.upper(),
+            )
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.list", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.list",
+                source="official",
+                request=request,
+                data=post_list_success_data(result),
+            )
+        )
+        return
+    console.print(to_json(result.raw))
 
 
 @post_group.command("delete")
@@ -1070,11 +1576,12 @@ def post_delete(
         return
 
     try:
-        result = _write_api_from_options(
+        with _write_api_from_options(
             author_urn=author_urn,
             oauth_file=oauth_file,
             linkedin_version=linkedin_version,
-        ).delete_post(post_id=post_id)
+        ) as api:
+            result = api.delete_post(post_id=post_id)
     except Exception as exc:
         if as_json:
             _handle_contract_error(

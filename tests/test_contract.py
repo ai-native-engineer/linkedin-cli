@@ -125,5 +125,56 @@ def test_post_text_dry_run_data_has_no_side_effect_result() -> None:
         "visibility": "public",
         "text_length": 5,
         "media_count": 0,
-        "api": "linkedin.ugcPosts",
+        "api": "linkedin.posts",
+    }
+
+
+def test_contract_raw_drops_secret_keys() -> None:
+    from linkedin_cli.contract import search_result_to_contract
+    from linkedin_cli.models import SearchResult
+
+    result = SearchResult(
+        kind="unknown",
+        title="x",
+        metadata={
+            "li_at": "AQEDsecret",
+            "Authorization": "Bearer leak",
+            "JSESSIONID": "ajax:leak",
+            "csrf-token": "ajax:leak",
+            "nested": {"access_token": "leak", "keep": "ok"},
+            "keep_me": "value",
+        },
+    )
+
+    raw = search_result_to_contract(result)["raw"]
+    blob = json.dumps(raw)
+    for needle in ("AQEDsecret", "Bearer leak", "ajax:leak"):
+        assert needle not in blob
+    assert "access_token" not in blob
+    # Non-secret data is preserved.
+    assert raw["metadata"]["keep_me"] == "value"
+    assert raw["metadata"]["nested"]["keep"] == "ok"
+
+
+def test_auth_status_data_reports_names_not_values() -> None:
+    from linkedin_cli.contract import auth_status_data
+
+    data = auth_status_data(
+        state="ready",
+        cookie_count=8,
+        cookie_names=["JSESSIONID", "li_at"],
+        cookie_domains=[".linkedin.com"],
+        required_missing=[],
+    )
+
+    assert data == {
+        "auth": {
+            "platform": "linkedin",
+            "state": "ready",
+            "session_path": None,
+            "cookie_count": 8,
+            "cookie_names": ["JSESSIONID", "li_at"],
+            "cookie_domains": [".linkedin.com"],
+            "required_missing": [],
+        }
     }

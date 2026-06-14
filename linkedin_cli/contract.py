@@ -11,7 +11,10 @@ from .models import Post
 from .models import Profile
 from .models import SearchResult
 from .publisher import DeleteResult
+from .publisher import GetPostResult
+from .publisher import ListPostsResult
 from .publisher import PublishResult
+from .publisher import UpdateResult
 from .serialization import to_dict
 
 SCHEMA_VERSION = "sns-json-v1"
@@ -119,7 +122,7 @@ def profile_data(profile: Profile) -> dict[str, Any]:
                 "connections": _coerce_metric(profile.connections_count),
             },
             "source": "unofficial",
-            "raw": to_dict(profile),
+            "raw": _redact_secrets(to_dict(profile)),
         }
     }
 
@@ -157,13 +160,13 @@ def search_result_to_contract(result: SearchResult) -> dict[str, Any]:
         "url": _empty_to_none(result.url),
         "snippet": _empty_to_none(result.snippet),
         "source": "unofficial",
-        "raw": to_dict(result),
+        "raw": _redact_secrets(to_dict(result)),
     }
 
 
 def post_to_contract(post: Post, *, source: str) -> dict[str, Any]:
     """Convert the internal Post model to the SNS JSON Contract post shape."""
-    raw = to_dict(post)
+    raw = _redact_secrets(to_dict(post))
     return {
         "id": _empty_to_none(post.urn),
         "url": _empty_to_none(post.url),
@@ -212,7 +215,7 @@ def post_text_dry_run_data(*, text: str, visibility: str) -> dict[str, Any]:
             "visibility": visibility,
             "text_length": len(text),
             "media_count": 0,
-            "api": "linkedin.ugcPosts",
+            "api": "linkedin.posts",
         },
     }
 
@@ -226,8 +229,32 @@ def post_media_dry_run_data(*, text: str, visibility: str, media_count: int) -> 
             "visibility": visibility,
             "text_length": len(text),
             "media_count": media_count,
-            "api": "linkedin.ugcPosts+assets",
+            "api": "linkedin.posts+images",
         },
+    }
+
+
+def post_create_dry_run_data(
+    *,
+    text: str,
+    visibility: str,
+    media_count: int,
+    api: str = "linkedin.posts",
+    extra: Optional[dict[str, Any]] = None,
+) -> dict[str, Any]:
+    """Build generic dry-run data for official post creation commands."""
+    planned = {
+        "visibility": visibility,
+        "text_length": len(text),
+        "media_count": media_count,
+        "api": api,
+    }
+    if extra:
+        planned.update(extra)
+    return {
+        "dry_run": True,
+        "post": None,
+        "planned": planned,
     }
 
 
@@ -244,6 +271,61 @@ def post_text_success_data(result: PublishResult) -> dict[str, Any]:
             "raw": result.raw,
         },
         "planned": None,
+    }
+
+
+def post_update_dry_run_data(*, post_id: str, text: str) -> dict[str, Any]:
+    """Build dry-run data for `post.update`."""
+    return {
+        "dry_run": True,
+        "post": None,
+        "planned": {
+            "id": post_id,
+            "text_length": len(text),
+            "api": "linkedin.posts.update",
+        },
+    }
+
+
+def post_update_success_data(result: UpdateResult) -> dict[str, Any]:
+    """Build success data for `post.update`."""
+    return {
+        "dry_run": False,
+        "post": {
+            "id": result.post_id,
+            "updated": True,
+            "updated_at": result.updated_at,
+            "source": "official",
+            "raw": result.raw,
+        },
+        "planned": None,
+    }
+
+
+def post_get_success_data(result: GetPostResult) -> dict[str, Any]:
+    """Build success data for `post.get`."""
+    return {
+        "post": {
+            "id": result.post_id,
+            "source": "official",
+            "raw": result.raw,
+        }
+    }
+
+
+def post_list_success_data(result: ListPostsResult) -> dict[str, Any]:
+    """Build success data for `post.list`."""
+    return {
+        "posts": [
+            {
+                "id": item.get("id"),
+                "source": "official",
+                "raw": item,
+            }
+            for item in result.elements
+        ],
+        "paging": result.paging,
+        "raw": result.raw,
     }
 
 
@@ -285,6 +367,66 @@ def saved_unsave_success_data(*, identifier: str, detail: str) -> dict[str, Any]
             "detail": detail,
         },
     }
+
+
+def auth_status_data(
+    *,
+    state: str,
+    cookie_count: int,
+    cookie_names: list[str],
+    cookie_domains: list[str],
+    required_missing: list[str],
+    session_path: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build `auth.status` data. Reports cookie presence only — never cookie values."""
+    return {
+        "auth": {
+            "platform": PLATFORM,
+            "state": state,
+            "session_path": session_path,
+            "cookie_count": cookie_count,
+            "cookie_names": cookie_names,
+            "cookie_domains": cookie_domains,
+            "required_missing": required_missing,
+        }
+    }
+
+
+_SECRET_RAW_KEYS = frozenset(
+    {
+        "liat",
+        "jsessionid",
+        "accesstoken",
+        "refreshtoken",
+        "authorization",
+        "cookie",
+        "setcookie",
+        "csrftoken",
+        "password",
+        "clientsecret",
+    }
+)
+
+
+def _redact_secrets(value: Any) -> Any:
+    """Recursively drop credential-like keys from a raw payload (contract rule 6).
+
+    The contract forbids cookies, OAuth/CSRF tokens, Authorization headers, and
+    session ids in `raw`. Read models never populate these today, so this is a
+    defense-in-depth guard against future regressions.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _redact_secrets(item)
+            for key, item in value.items()
+            if not (
+                isinstance(key, str)
+                and key.lower().replace("-", "").replace("_", "") in _SECRET_RAW_KEYS
+            )
+        }
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    return value
 
 
 def _empty_to_none(value: Any) -> Any:

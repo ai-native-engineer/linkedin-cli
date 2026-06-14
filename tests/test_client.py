@@ -59,6 +59,43 @@ def test_public_id_from_url_handles_subpaths() -> None:
     assert client._public_id_from_url("https://www.linkedin.com/feed/") == ""
 
 
+def test_normalize_activity_urn_accepts_share_and_ugcpost() -> None:
+    client = object.__new__(LinkedInClient)
+
+    assert client.normalize_activity_urn("urn:li:share:123") == "urn:li:share:123"
+    assert client.normalize_activity_urn("urn:li:ugcPost:456") == "urn:li:ugcPost:456"
+    assert client.normalize_activity_urn("urn:li:activity:789") == "urn:li:activity:789"
+    assert client.normalize_activity_urn("999") == "urn:li:activity:999"
+    assert (
+        client.normalize_activity_urn("https://www.linkedin.com/feed/update/urn:li:share:123/")
+        == "urn:li:share:123"
+    )
+
+
+def test_activity_url_preserves_urn_type() -> None:
+    client = object.__new__(LinkedInClient)
+
+    assert (
+        client.activity_url("urn:li:share:123")
+        == "https://www.linkedin.com/feed/update/urn:li:share:123/"
+    )
+    assert (
+        client.activity_url("urn:li:activity:789")
+        == "https://www.linkedin.com/feed/update/urn:li:activity:789/"
+    )
+
+
+def test_react_requires_activity_urn() -> None:
+    client = object.__new__(LinkedInClient)
+
+    try:
+        client.react("urn:li:share:123", "like")
+    except LinkedInClientError as exc:
+        assert "activity URN" in str(exc)
+    else:  # pragma: no cover
+        raise AssertionError("Expected LinkedInClientError for a non-activity URN")
+
+
 def test_profile_summary_does_not_fall_back_to_headline() -> None:
     client = object.__new__(LinkedInClient)
 
