@@ -35,15 +35,17 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 | Feature | Target command | Status | Notes |
 |---|---|---:|---|
-| Comment list | `comment list` | next | Official Comments API. |
-| Comment create | `comment create` | next | Prefer official over browser fallback. |
-| Comment update | `comment update` | next | Official Comments API. |
-| Comment delete | `comment delete` | next | Official Comments API. |
-| Reaction list | `reaction list` | next | Official Reactions API. |
-| Reaction create | `reaction create` | next | Prefer official over legacy `react`. |
-| Reaction delete | `reaction delete` | next | Prefer official over legacy `unreact`. |
-| Social metadata | `social metadata` | next | Counts, summaries, comment settings. |
-| Disable comments | `social comments disable` | next | Official Social Metadata API if permitted. |
+| Comment list | `comment list` | implemented | Official Comments API; permission dependent. |
+| Comment get | `comment get` | implemented | Official Comments API; permission dependent. |
+| Comment create | `comment create` | implemented | Official Comments API; prefers official over browser fallback. |
+| Comment update | `comment update` | implemented | Official Comments API; permission dependent. |
+| Comment delete | `comment delete` | next | Needs endpoint confirmation before adding. |
+| Reaction list | `reaction list` | implemented | Official Reactions API; permission dependent. |
+| Reaction get | `reaction get` | implemented | Official Reactions API; permission dependent. |
+| Reaction create | `reaction create` | implemented | Official Reactions API; prefers official over legacy `react`. |
+| Reaction delete | `reaction delete` | implemented | Official Reactions API; prefers official over legacy `unreact`. |
+| Social metadata | `social metadata` | implemented | Counts, summaries, comment settings. |
+| Comments state | `social comments-state` | implemented | Open/close comments if permitted. |
 
 ## Unofficial Personal Read APIs
 
@@ -72,10 +74,10 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 ## Implementation Order
 
-1. Add official `comment` and `reaction` command groups.
-2. Add social metadata commands.
-3. Add document and poll publishing.
-4. Harden pagination for unofficial saved/profile-posts reads.
+1. Confirm and add official comment deletion if supported for the current API version.
+2. Add document and poll publishing.
+3. Harden pagination for unofficial saved/profile-posts reads.
+4. Add live permission matrix evidence for `w_member_social_feed` / `r_member_social_feed`.
 
 Official references:
 

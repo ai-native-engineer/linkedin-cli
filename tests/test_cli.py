@@ -12,10 +12,15 @@ from linkedin_cli.models import Post
 from linkedin_cli.models import Profile
 from linkedin_cli.models import SearchResult
 from linkedin_cli.oauth_flow import OAuthLoginResult
+from linkedin_cli.publisher import CommentListResult
+from linkedin_cli.publisher import CommentResult
 from linkedin_cli.publisher import DeleteResult
 from linkedin_cli.publisher import GetPostResult
 from linkedin_cli.publisher import ListPostsResult
 from linkedin_cli.publisher import PublishResult
+from linkedin_cli.publisher import ReactionResult
+from linkedin_cli.publisher import SocialActionResult
+from linkedin_cli.publisher import SocialMetadataResult
 from linkedin_cli.publisher import UpdateResult
 
 
@@ -1095,6 +1100,203 @@ def test_post_list_json_contract_output(monkeypatch) -> None:
     assert payload["ok"] is True
     assert payload["command"] == "post.list"
     assert payload["data"]["posts"][0]["id"] == "urn:li:share:1"
+
+
+def test_comment_list_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def list_comments(self, *, entity, count, start):
+            assert entity == "urn:li:ugcPost:1"
+            assert count == 2
+            return CommentListResult(
+                entity_urn=entity,
+                elements=[{"id": "comment-1"}],
+                paging={"count": count, "start": start},
+                raw={"elements": [{"id": "comment-1"}]},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(cli, ["comment", "list", "urn:li:ugcPost:1", "--count", "2", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "comment.list"
+    assert payload["source"] == "official"
+    assert payload["data"]["comments"][0]["id"] == "comment-1"
+
+
+def test_comment_create_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_comment(self, *, entity, text, actor_urn=None, parent_comment=None):
+            assert entity == "urn:li:ugcPost:1"
+            assert text == "hello"
+            assert actor_urn is None
+            assert parent_comment is None
+            return CommentResult(entity_urn=entity, comment_id="comment-1", raw={"id": "comment-1"})
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(cli, ["comment", "create", "urn:li:ugcPost:1", "--text", "hello", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "comment.create"
+    assert payload["request"]["text_length"] == 5
+    assert payload["data"]["comment"]["id"] == "comment-1"
+
+
+def test_comment_get_and_update_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def get_comment(self, *, entity, comment_id):
+            return CommentResult(entity_urn=entity, comment_id=comment_id, raw={"id": comment_id})
+
+        def update_comment(self, *, entity, comment_id, text, actor_urn=None):
+            assert text == "updated"
+            return SocialActionResult(
+                action="comment.update",
+                entity_urn=entity,
+                completed_at="2026-06-15T00:00:00Z",
+                raw={"status_code": 204},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    get_result = runner.invoke(cli, ["comment", "get", "urn:li:ugcPost:1", "comment-1", "--json"])
+    update_result = runner.invoke(
+        cli,
+        ["comment", "update", "urn:li:ugcPost:1", "comment-1", "--text", "updated", "--json"],
+    )
+
+    assert get_result.exit_code == 0
+    assert json.loads(get_result.output)["command"] == "comment.get"
+    assert update_result.exit_code == 0
+    update_payload = json.loads(update_result.output)
+    assert update_payload["command"] == "comment.update"
+    assert update_payload["data"]["action"] == "comment.update"
+
+
+def test_comment_legacy_route_still_works(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["comment", "urn:li:activity:123", "hello"])
+
+    assert result.exit_code == 0
+    assert "Comment posted" in result.output
+
+
+def test_reaction_commands_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def list_reactions(self, *, entity, count, start):
+            return CommentListResult(
+                entity_urn=entity,
+                elements=[{"id": "reaction-1"}],
+                paging={"count": count, "start": start},
+                raw={"elements": [{"id": "reaction-1"}]},
+            )
+
+        def get_reaction(self, *, entity, actor_urn=None):
+            return ReactionResult(actor_urn="urn:li:person:abc", entity_urn=entity, raw={})
+
+        def create_reaction(self, *, entity, reaction_type, actor_urn=None):
+            assert reaction_type == "celebrate"
+            return ReactionResult(actor_urn="urn:li:person:abc", entity_urn=entity, raw={})
+
+        def delete_reaction(self, *, entity, actor_urn=None):
+            return SocialActionResult(
+                action="reaction.delete",
+                entity_urn=entity,
+                completed_at="2026-06-15T00:00:00Z",
+                raw={"status_code": 204},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    list_result = runner.invoke(cli, ["reaction", "list", "urn:li:ugcPost:1", "--json"])
+    get_result = runner.invoke(cli, ["reaction", "get", "urn:li:ugcPost:1", "--json"])
+    create_result = runner.invoke(
+        cli,
+        ["reaction", "create", "urn:li:ugcPost:1", "--type", "celebrate", "--json"],
+    )
+    delete_result = runner.invoke(cli, ["reaction", "delete", "urn:li:ugcPost:1", "--json"])
+
+    assert list_result.exit_code == 0
+    assert json.loads(list_result.output)["command"] == "reaction.list"
+    assert get_result.exit_code == 0
+    assert json.loads(get_result.output)["command"] == "reaction.get"
+    assert create_result.exit_code == 0
+    assert json.loads(create_result.output)["command"] == "reaction.create"
+    assert delete_result.exit_code == 0
+    assert json.loads(delete_result.output)["command"] == "reaction.delete"
+
+
+def test_social_commands_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def get_social_metadata(self, *, entity):
+            return SocialMetadataResult(entity_urn=entity, raw={"commentsState": "OPEN"})
+
+        def update_comments_state(self, *, entity, state, actor_urn=None):
+            assert state == "closed"
+            return SocialMetadataResult(entity_urn=entity, raw={"commentsState": "CLOSED"})
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    metadata_result = runner.invoke(cli, ["social", "metadata", "urn:li:ugcPost:1", "--json"])
+    state_result = runner.invoke(
+        cli,
+        ["social", "comments-state", "urn:li:ugcPost:1", "--state", "closed", "--json"],
+    )
+
+    assert metadata_result.exit_code == 0
+    metadata_payload = json.loads(metadata_result.output)
+    assert metadata_payload["command"] == "social.metadata"
+    assert metadata_payload["data"]["social_metadata"]["raw"]["commentsState"] == "OPEN"
+    assert state_result.exit_code == 0
+    state_payload = json.loads(state_result.output)
+    assert state_payload["command"] == "social.comments_state"
+    assert state_payload["data"]["social_metadata"]["raw"]["commentsState"] == "CLOSED"
 
 
 def test_post_delete_dry_run_json_contract_output() -> None:

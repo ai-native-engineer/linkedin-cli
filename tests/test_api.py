@@ -8,9 +8,14 @@ from linkedin_cli.api import DRY_RUN_VIDEO_URN
 from linkedin_cli.api import LinkedInWriteAPI
 from linkedin_cli.oauth import OAuthConfig
 from linkedin_cli.publisher import DeleteResult
+from linkedin_cli.publisher import CommentListResult
+from linkedin_cli.publisher import CommentResult
 from linkedin_cli.publisher import GetPostResult
 from linkedin_cli.publisher import ListPostsResult
 from linkedin_cli.publisher import PublishResult
+from linkedin_cli.publisher import ReactionResult
+from linkedin_cli.publisher import SocialActionResult
+from linkedin_cli.publisher import SocialMetadataResult
 from linkedin_cli.publisher import UpdateResult
 
 
@@ -24,6 +29,9 @@ class FakePublisher:
         self.article_calls = []
         self.reshare_calls = []
         self.update_calls = []
+        self.comment_calls = []
+        self.reaction_calls = []
+        self.social_calls = []
 
     def build_text_payload(self, *, text, visibility):
         body = text.strip()
@@ -180,6 +188,86 @@ class FakePublisher:
             paging={"count": count, "start": start},
             raw={"elements": [{"id": "urn:li:share:1"}]},
         )
+
+    def list_comments(self, *, entity, count=10, start=0):
+        self.comment_calls.append({"method": "list", "entity": entity, "count": count, "start": start})
+        return CommentListResult(
+            entity_urn=entity,
+            elements=[{"id": "comment-1"}],
+            paging={"count": count, "start": start},
+            raw={"elements": [{"id": "comment-1"}]},
+        )
+
+    def get_comment(self, *, entity, comment_id):
+        self.comment_calls.append({"method": "get", "entity": entity, "comment_id": comment_id})
+        return CommentResult(entity_urn=entity, comment_id=comment_id, raw={"id": comment_id})
+
+    def create_comment(self, *, entity, text, actor_urn=None, parent_comment=None):
+        self.comment_calls.append(
+            {
+                "method": "create",
+                "entity": entity,
+                "text": text,
+                "actor_urn": actor_urn,
+                "parent_comment": parent_comment,
+            }
+        )
+        return CommentResult(entity_urn=entity, comment_id="comment-1", raw={"id": "comment-1"})
+
+    def update_comment(self, *, entity, comment_id, text, actor_urn=None):
+        self.comment_calls.append(
+            {
+                "method": "update",
+                "entity": entity,
+                "comment_id": comment_id,
+                "text": text,
+                "actor_urn": actor_urn,
+            }
+        )
+        return SocialActionResult(
+            action="comment.update",
+            entity_urn=entity,
+            completed_at="2026-06-15T00:00:00Z",
+            raw={"status_code": 204},
+        )
+
+    def list_reactions(self, *, entity, count=10, start=0):
+        self.reaction_calls.append({"method": "list", "entity": entity, "count": count, "start": start})
+        return CommentListResult(
+            entity_urn=entity,
+            elements=[{"id": "reaction-1"}],
+            paging={"count": count, "start": start},
+            raw={"elements": [{"id": "reaction-1"}]},
+        )
+
+    def get_reaction(self, *, entity, actor_urn=None):
+        self.reaction_calls.append({"method": "get", "entity": entity, "actor_urn": actor_urn})
+        return ReactionResult(actor_urn=actor_urn or "urn:li:person:abc", entity_urn=entity, raw={})
+
+    def create_reaction(self, *, entity, reaction_type="like", actor_urn=None):
+        self.reaction_calls.append(
+            {"method": "create", "entity": entity, "reaction_type": reaction_type, "actor_urn": actor_urn}
+        )
+        return ReactionResult(actor_urn=actor_urn or "urn:li:person:abc", entity_urn=entity, raw={})
+
+    def delete_reaction(self, *, entity, actor_urn=None):
+        self.reaction_calls.append({"method": "delete", "entity": entity, "actor_urn": actor_urn})
+        return SocialActionResult(
+            action="reaction.delete",
+            entity_urn=entity,
+            completed_at="2026-06-15T00:00:00Z",
+            raw={"status_code": 204},
+        )
+
+    def get_social_metadata(self, *, entity):
+        self.social_calls.append({"method": "metadata", "entity": entity})
+        return SocialMetadataResult(entity_urn=entity, raw={"commentsState": "OPEN"})
+
+    def update_comments_state(self, *, entity, state, actor_urn=None):
+        self.social_calls.append(
+            {"method": "comments_state", "entity": entity, "state": state, "actor_urn": actor_urn}
+        )
+        return SocialMetadataResult(entity_urn=entity, raw={"commentsState": state.upper()})
 
 
 def _api(fake: FakePublisher) -> LinkedInWriteAPI:
@@ -411,6 +499,50 @@ def test_get_and_list_posts_delegate_to_publisher() -> None:
 
     assert post.raw["id"] == "urn:li:share:1"
     assert posts.elements == [{"id": "urn:li:share:1"}]
+
+
+def test_comment_methods_delegate_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    comments = api.list_comments(entity="urn:li:ugcPost:1", count=2, start=0)
+    comment = api.get_comment(entity="urn:li:ugcPost:1", comment_id="comment-1")
+    created = api.create_comment(entity="urn:li:ugcPost:1", text="hello")
+    updated = api.update_comment(entity="urn:li:ugcPost:1", comment_id="comment-1", text="updated")
+
+    assert comments.elements == [{"id": "comment-1"}]
+    assert comment.comment_id == "comment-1"
+    assert created.comment_id == "comment-1"
+    assert updated.action == "comment.update"
+    assert [call["method"] for call in fake.comment_calls] == ["list", "get", "create", "update"]
+
+
+def test_reaction_methods_delegate_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    reactions = api.list_reactions(entity="urn:li:ugcPost:1", count=2, start=0)
+    reaction = api.get_reaction(entity="urn:li:ugcPost:1")
+    created = api.create_reaction(entity="urn:li:ugcPost:1", reaction_type="celebrate")
+    deleted = api.delete_reaction(entity="urn:li:ugcPost:1")
+
+    assert reactions.elements == [{"id": "reaction-1"}]
+    assert reaction.actor_urn == "urn:li:person:abc"
+    assert created.entity_urn == "urn:li:ugcPost:1"
+    assert deleted.action == "reaction.delete"
+    assert [call["method"] for call in fake.reaction_calls] == ["list", "get", "create", "delete"]
+
+
+def test_social_metadata_methods_delegate_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    metadata = api.get_social_metadata(entity="urn:li:ugcPost:1")
+    updated = api.update_comments_state(entity="urn:li:ugcPost:1", state="closed")
+
+    assert metadata.raw["commentsState"] == "OPEN"
+    assert updated.raw["commentsState"] == "CLOSED"
+    assert [call["method"] for call in fake.social_calls] == ["metadata", "comments_state"]
 
 
 def test_from_config_accepts_string_path(tmp_path, monkeypatch) -> None:

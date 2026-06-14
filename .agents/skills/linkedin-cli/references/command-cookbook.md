@@ -171,6 +171,21 @@ uv run linkedin-cli post delete urn:li:share:123 --dry-run --json
 uv run linkedin-cli post delete urn:li:share:123 --json
 ```
 
+Official comments, reactions, and social metadata commands:
+
+```bash
+uv run linkedin-cli comment list urn:li:ugcPost:123 --json
+uv run linkedin-cli comment get urn:li:ugcPost:123 987654321 --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
+uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated comment" --json
+uv run linkedin-cli reaction list urn:li:ugcPost:123 --json
+uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
+uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
+uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json
+```
+
 Legacy browser/session mutations:
 
 ```bash

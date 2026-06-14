@@ -68,6 +68,12 @@ uv run linkedin-cli auth oauth-login
 | List official posts by author | `uv run linkedin-cli post list --count 10 --json` |
 | Dry-run post deletion | `uv run linkedin-cli post delete urn:li:share:123 --dry-run --json` |
 | Delete an official post | `uv run linkedin-cli post delete urn:li:share:123 --json` |
+| List official comments | `uv run linkedin-cli comment list urn:li:ugcPost:123 --json` |
+| Create official comment | `uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json` |
+| Create official reaction | `uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json` |
+| Delete official reaction | `uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json` |
+| Get social metadata | `uv run linkedin-cli social metadata urn:li:ugcPost:123 --json` |
+| Open or close comments | `uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json` |
 
 ## Identifier Rules
 

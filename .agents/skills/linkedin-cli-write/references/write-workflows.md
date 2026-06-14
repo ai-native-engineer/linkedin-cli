@@ -50,6 +50,18 @@ uv run linkedin-cli post get urn:li:share:123 --json
 uv run linkedin-cli post list --count 10 --json
 ```
 
+Use official social action commands for comments, reactions, and comment state:
+
+```bash
+uv run linkedin-cli comment list urn:li:ugcPost:123 --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
+uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated" --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
+uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
+uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json
+```
+
 Delete through official LinkedIn APIs:
 
 ```bash
@@ -178,6 +190,9 @@ Current implementation details:
 - `post video` initializes an official Videos API upload, uploads/finalizes the MP4, then publishes through Posts API
 - `post article`, `post reshare`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
 - `post delete` deletes through the official LinkedIn Posts API
+- `comment list/get/create/update` use the official LinkedIn Comments API
+- `reaction list/get/create/delete` use the official LinkedIn Reactions API
+- `social metadata` and `social comments-state` use the official LinkedIn Social Metadata API
 - `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
 - `linkedin_cli.LinkedInWriteAPI` exposes the same official write surface to Python callers
 - legacy `post "..."` uses Playwright-backed browser fallback

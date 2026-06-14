@@ -28,6 +28,10 @@ uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run -
 uv run linkedin-cli post get urn:li:share:123 --json
 uv run linkedin-cli post list --count 10 --json
 uv run linkedin-cli post delete urn:li:share:123 --dry-run --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
+uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json
 ```
 
 ## Legacy Mutation Commands

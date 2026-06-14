@@ -44,6 +44,9 @@ Write:
 - Publish article/link posts.
 - Reshare existing posts.
 - Update post commentary.
+- List, retrieve, create, and update comments through the official Comments API.
+- List, retrieve, create, and delete reactions through the official Reactions API.
+- Retrieve social metadata and open/close comments through the official Social Metadata API.
 - Retrieve one post or list posts by author when the token has the required read permission.
 - Delete your own official posts by share/ugcPost URN, numeric share id, or feed update URL.
 - Unsave saved posts.
@@ -114,6 +117,13 @@ linkedin-cli post get urn:li:share:1234567890 --json
 linkedin-cli post list --count 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
+linkedin-cli comment list urn:li:ugcPost:1234567890 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --json
 ```
 
 For longer generated posts, prefer files:
@@ -331,6 +341,19 @@ linkedin-cli post get urn:li:share:1234567890 --json
 linkedin-cli post list --count 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
+
+linkedin-cli comment list urn:li:ugcPost:1234567890 --json
+linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+
+linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction get urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
 ```
 
 Legacy compatibility commands:

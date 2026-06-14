@@ -44,6 +44,9 @@
 - article/link 게시
 - 기존 게시글 재공유
 - 게시글 commentary 수정
+- 공식 Comments API로 댓글 목록/조회/작성/수정
+- 공식 Reactions API로 반응 목록/조회/생성/삭제
+- 공식 Social Metadata API로 반응/댓글 요약 조회 및 댓글 open/closed 상태 수정
 - 토큰에 필요한 read 권한이 있을 때 단일 게시글 조회 및 author별 게시글 목록 조회
 - share/ugcPost URN, numeric share id, feed update URL로 본인 공식 게시글 삭제
 - 저장한 게시글 저장 취소
@@ -114,6 +117,13 @@ linkedin-cli post get urn:li:share:1234567890 --json
 linkedin-cli post list --count 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
+linkedin-cli comment list urn:li:ugcPost:1234567890 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --json
 ```
 
 긴 글이나 생성된 글은 inline text보다 파일 입력을 권장합니다.
@@ -331,6 +341,19 @@ linkedin-cli post get urn:li:share:1234567890 --json
 linkedin-cli post list --count 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
+
+linkedin-cli comment list urn:li:ugcPost:1234567890 --json
+linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+
+linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction get urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
 ```
 
 Legacy 호환 명령:
