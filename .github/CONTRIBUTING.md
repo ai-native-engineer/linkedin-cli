@@ -6,7 +6,7 @@ The goal of this project is to keep the CLI practical, readable, and honest abou
 
 ## Before You Start
 
-- Read the [README](./README.md) for the current supported flows.
+- Read the [README](../README.md) for the current supported flows.
 - Read the [Security Policy](./SECURITY.md) before sharing logs or repro steps.
 - Do not open public issues with live session cookies, HAR files, or screenshots that expose account data.
 

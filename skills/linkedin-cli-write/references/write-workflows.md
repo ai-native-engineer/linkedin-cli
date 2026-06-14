@@ -28,6 +28,9 @@ Validate official post payloads without side effects:
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
 uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --dry-run --json
+uv run linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
+uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --dry-run --json
+uv run linkedin-cli post update urn:li:share:123 --text "updated" --dry-run --json
 ```
 
 Publish through official LinkedIn APIs:
@@ -36,6 +39,11 @@ Publish through official LinkedIn APIs:
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --json
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --json
+uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
+uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --json
+uv run linkedin-cli post update urn:li:share:123 --text "updated" --json
+uv run linkedin-cli post get urn:li:share:123 --json
+uv run linkedin-cli post list --count 10 --json
 ```
 
 Delete through official LinkedIn APIs:
@@ -92,7 +100,7 @@ uv run linkedin comment urn:li:activity:123 "nice post"
 
 ## Official Post Auth
 
-Official `post text`, `post media`, and `post delete` load OAuth credentials from:
+Official `post text`, `post media`, `post article`, `post reshare`, `post update`, `post get`, `post list`, and `post delete` load OAuth credentials from:
 
 1. `LINKEDIN_ACCESS_TOKEN` + `LINKEDIN_AUTHOR_URN`
 2. `LINKEDIN_OAUTH_FILE`
@@ -113,6 +121,10 @@ Use `--author` or `--linkedin-version` only when the caller explicitly wants to 
 Use `--text-file <path>` for long posts. Use `--text-file -` only when the caller intentionally pipes stdin into the command.
 
 `post media` currently supports exactly one local JPG/GIF/PNG image path. Multiple media files, videos, and carousels are outside the current vertical slice.
+
+`post article` accepts `--url` plus optional `--title`, `--description`, and `--thumbnail`.
+
+`post get` and `post list` may require `r_member_social` or `r_organization_social`; a token with only `w_member_social` may receive `permission_denied`.
 
 `post delete` accepts a `urn:li:share:*`, `urn:li:ugcPost:*`, numeric share id, or LinkedIn feed update URL. It rejects `urn:li:activity:*` because the official delete surface expects a post/share URN.
 
@@ -152,10 +164,11 @@ uv run linkedin activity <identifier> --json
 
 Current implementation details:
 
-- `post text` publishes through the official Share on LinkedIn / UGC Posts API
-- `post media` registers an official Assets API upload, uploads one image, then publishes through UGC Posts API
+- `post text` publishes through the official LinkedIn Posts API
+- `post media` registers an official Images API upload, uploads one image, then publishes through Posts API
+- `post article`, `post reshare`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
 - `post delete` deletes through the official LinkedIn Posts API
-- `post text --dry-run`, `post media --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
+- `post text --dry-run`, `post media --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
 - `linkedin_cli.LinkedInWriteAPI` exposes the same official text and one-image write surface to Python callers
 - legacy `post "..."` uses Playwright-backed browser fallback
 - `comment` uses Playwright-backed browser fallback

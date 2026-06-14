@@ -3,7 +3,7 @@
   "description": "AI-native LinkedIn CLI plugin for personal read workflows and official LinkedIn publishing. Read commands are unofficial and use the user's own session.",
   "version": "0.1.0",
   "author": {
-    "name": "sns-ecosystem"
+    "name": "Aiden Ahn"
   },
   "license": "MIT",
   "keywords": [
@@ -25,6 +25,11 @@
     "linkedin-cli post text --text-file <path> --visibility public --dry-run --json",
     "linkedin-cli post text --text <text> --visibility public --dry-run --json",
     "linkedin-cli post media --text <text> --media <path> --visibility public --dry-run --json",
+    "linkedin-cli post article --text <text> --url <url> --visibility public --dry-run --json",
+    "linkedin-cli post reshare <post-id-or-url> --text <text> --visibility public --dry-run --json",
+    "linkedin-cli post update <post-id-or-url> --text <text> --dry-run --json",
+    "linkedin-cli post get <post-id-or-url> --json",
+    "linkedin-cli post list --count 10 --json",
     "linkedin-cli post delete <post-id-or-url> --dry-run --json",
     "linkedin-cli post delete <post-id-or-url> --json"
   ],

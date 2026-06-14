@@ -1,16 +1,16 @@
 # Initial Setup
 
-Use this when `linkedin-cli` is not installed, OAuth is missing, the user is setting up a new machine, or a session starts from the SNS ecosystem root.
+Use this when `linkedin-cli` is not installed, OAuth is missing, or the user is setting up a new machine.
 
 ## 1. Enter The Project
 
-From the SNS ecosystem root:
+Work from the repository root:
 
 ```bash
-cd /Users/seungwonan/Dev/1-project/sns-ecosystem/platforms/linkedin-cli
+cd linkedin-cli
 ```
 
-This is the project-local source for the LinkedIn CLI and its skills. Do not edit `refs/linkedin-cli` for implementation work.
+This directory holds the LinkedIn CLI and its project-local skills.
 
 ## 2. Install Dependencies
 
@@ -47,18 +47,19 @@ Prefer the full `LINKEDIN_COOKIE_HEADER` when feed/profile probes redirect or re
 
 ## 4. Set Up Official Posting OAuth
 
-Official posting uses LinkedIn Share on LinkedIn / UGC API. The LinkedIn developer app must have:
+Official posting uses LinkedIn Posts API. The LinkedIn developer app must have:
 
 - Product: `Share on LinkedIn`
 - Scope: `w_member_social`
 - Redirect URL: `http://localhost:8787/callback`
 - Optional redirect URL: `http://127.0.0.1:8787/callback`
 
-Keep `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET` in `agents-env`, then issue and save the token:
+Set `LINKEDIN_CLIENT_ID` and `LINKEDIN_CLIENT_SECRET`, then issue and save the token:
 
 ```bash
-agents-env run LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET -- \
-  uv run linkedin-cli auth oauth-login
+export LINKEDIN_CLIENT_ID='...'
+export LINKEDIN_CLIENT_SECRET='...'
+uv run linkedin-cli auth oauth-login
 ```
 
 The command opens LinkedIn OAuth, validates `state`, exchanges the code, fetches userinfo, and writes:
@@ -89,7 +90,7 @@ Dry-run output for text posts should include:
   "source": "official",
   "data": {
     "planned": {
-      "api": "linkedin.ugcPosts"
+      "api": "linkedin.posts"
     }
   }
 }
@@ -111,6 +112,16 @@ Image posts currently use one local JPG/GIF/PNG:
 ```bash
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --json
+```
+
+Article, reshare, update, and official read commands:
+
+```bash
+uv run linkedin-cli post article --text-file post.md --url https://example.com/post --dry-run --json
+uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post get urn:li:share:123 --json
+uv run linkedin-cli post list --count 10 --json
 ```
 
 Post deletion accepts the id returned by `post text`/`post media`:

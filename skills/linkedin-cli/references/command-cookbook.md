@@ -61,8 +61,9 @@ uv run linkedin-cli --help
 Issue and save official publishing OAuth:
 
 ```bash
-agents-env run LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET -- \
-  uv run linkedin-cli auth oauth-login
+export LINKEDIN_CLIENT_ID='...'
+export LINKEDIN_CLIENT_SECRET='...'
+uv run linkedin-cli auth oauth-login
 ```
 
 Verify the saved token without printing it:
@@ -101,16 +102,16 @@ uv run linkedin-cli read search "AI engineer" --limit 10 --json --output tmp/sea
 Fetch a profile by public identifier or URL:
 
 ```bash
-uv run linkedin-cli read profile satyanadella
-uv run linkedin-cli read profile https://www.linkedin.com/in/satyanadella/ --json
+uv run linkedin-cli read profile seungwon-aiden
+uv run linkedin-cli read profile https://www.linkedin.com/in/seungwon-aiden/ --json
 ```
 
 Fetch posts from a profile:
 
 ```bash
-uv run linkedin profile-posts satyanadella --max 10
-uv run linkedin profile-posts satyanadella --max 10 --json
-uv run linkedin profile-posts satyanadella --max 10 --json --output tmp/posts.json
+uv run linkedin profile-posts seungwon-aiden --max 10
+uv run linkedin profile-posts seungwon-aiden --max 10 --json
+uv run linkedin profile-posts seungwon-aiden --max 10 --json --output tmp/posts.json
 ```
 
 Inspect one activity:
@@ -123,7 +124,7 @@ uv run linkedin activity https://www.linkedin.com/feed/update/urn:li:activity:12
 
 ## Write Commands
 
-Official text publishing uses Share on LinkedIn / UGC API:
+Official text publishing uses LinkedIn Posts API:
 
 ```bash
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
@@ -131,11 +132,22 @@ uv run linkedin-cli post text --text-file post.md --visibility public --dry-run 
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 ```
 
-Official image publishing registers one local image asset, uploads it, then publishes a UGC post:
+Official image publishing registers one local image asset, uploads it, then publishes a post:
 
 ```bash
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --json
+```
+
+Official article, reshare, update, get, and list commands:
+
+```bash
+uv run linkedin-cli post article --text-file post.md --url https://example.com/post --dry-run --json
+uv run linkedin-cli post article --text-file post.md --url https://example.com/post --json
+uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post get urn:li:share:123 --json
+uv run linkedin-cli post list --count 10 --json
 ```
 
 Official post deletion removes a post by share/ugcPost URN, numeric share id, or feed update URL:
@@ -182,8 +194,8 @@ Do not assume `profile` or `activity` support `--output`; they do not.
 
 Profile commands accept:
 
-- a public id like `lebrero-juan-francisco`
-- a full profile URL like `https://www.linkedin.com/in/lebrero-juan-francisco/`
+- a public id like `seungwon-aiden`
+- a full profile URL like `https://www.linkedin.com/in/seungwon-aiden/`
 
 Activity-aware commands accept:
 
@@ -222,6 +234,8 @@ Publish through official LinkedIn APIs:
 ```bash
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
+uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
+uv run linkedin-cli post reshare urn:li:share:7323456789012345678 --text "worth reading" --json
 ```
 
 Delete a post through official LinkedIn APIs:
@@ -234,8 +248,8 @@ uv run linkedin-cli post delete urn:li:share:7323456789012345678 --json
 Inspect a profile and then fetch their last 5 posts:
 
 ```bash
-uv run linkedin-cli read profile lebrero-juan-francisco --json
-uv run linkedin profile-posts lebrero-juan-francisco --max 5 --json
+uv run linkedin-cli read profile seungwon-aiden --json
+uv run linkedin profile-posts seungwon-aiden --max 5 --json
 ```
 
 Search a company name and persist results:
@@ -268,6 +282,11 @@ The following are implemented and covered by tests, but are less battle-tested a
 - `activity`
 - official `post text`
 - official `post media`
+- official `post article`
+- official `post reshare`
+- official `post update`
+- official `post get`
+- official `post list`
 - official `post delete`
 - legacy session-based write actions
 
