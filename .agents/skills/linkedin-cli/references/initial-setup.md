@@ -112,6 +112,8 @@ Image posts currently use one local JPG/GIF/PNG:
 ```bash
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --json
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
 ```
 
 Article, reshare, update, and official read commands:

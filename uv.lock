@@ -11,6 +11,51 @@ exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for 
 exclude-newer-span = "P1W"
 
 [[package]]
+name = "agent-linkedin"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "browser-cookie3" },
+    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "httpx" },
+    { name = "linkedin-api", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "linkedin-api", version = "2.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "lxml" },
+    { name = "playwright" },
+    { name = "pyyaml" },
+    { name = "requests" },
+    { name = "rich" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
+    { name = "pytest", version = "9.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "beautifulsoup4", specifier = ">=4.12" },
+    { name = "browser-cookie3", specifier = ">=0.20" },
+    { name = "click", specifier = ">=8.1" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "linkedin-api", specifier = ">=2.2.0" },
+    { name = "lxml", specifier = ">=5.3" },
+    { name = "playwright", specifier = ">=1.52" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
+    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "requests", specifier = ">=2.32" },
+    { name = "rich", specifier = ">=13.9" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "anyio"
 version = "4.12.1"
 source = { registry = "https://pypi.org/simple" }
@@ -449,51 +494,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/08/c9/13318dbe449f89b8f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/ea/cd1a5d92ef0dfbf1fe2d1a54f36d28fde080e9265af00e17ea4950f038b2/linkedin_api-2.3.1-py3-none-any.whl", hash = "sha256:b7c8078d05e3df9608f067e880c9f1127f233c4af29073aee546d565c4ca251b", size = 26374, upload-time = "2024-11-07T08:13:17.536Z" },
 ]
-
-[[package]]
-name = "linkedin-cli"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "beautifulsoup4" },
-    { name = "browser-cookie3" },
-    { name = "click", version = "8.1.8", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "click", version = "8.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "httpx" },
-    { name = "linkedin-api", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "linkedin-api", version = "2.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "lxml" },
-    { name = "playwright" },
-    { name = "pyyaml" },
-    { name = "requests" },
-    { name = "rich" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
-    { name = "pytest", version = "9.0.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "beautifulsoup4", specifier = ">=4.12" },
-    { name = "browser-cookie3", specifier = ">=0.20" },
-    { name = "click", specifier = ">=8.1" },
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "linkedin-api", specifier = ">=2.2.0" },
-    { name = "lxml", specifier = ">=5.3" },
-    { name = "playwright", specifier = ">=1.52" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3" },
-    { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.32" },
-    { name = "rich", specifier = ">=13.9" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.11" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "lxml"

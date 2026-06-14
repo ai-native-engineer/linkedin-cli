@@ -20,6 +20,8 @@ uv run linkedin-cli post text --text "Hello from linkedin-cli" --visibility publ
 uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json
 uv run linkedin-cli post text --text "Hello from linkedin-cli" --visibility public --json
 uv run linkedin-cli post media --text "Hello with image" --media image.png --visibility public --json
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
 uv run linkedin-cli post article --text-file post.md --url https://example.com/post --dry-run --json
 uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json

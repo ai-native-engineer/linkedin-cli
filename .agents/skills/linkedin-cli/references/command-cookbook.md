@@ -139,6 +139,20 @@ uv run linkedin-cli post media --text-file post.md --media image.png --visibilit
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --json
 ```
 
+Official multi-image publishing uploads 2-20 local images, then publishes a multi-image post:
+
+```bash
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --alt-text "First image" --alt-text "Second image" --json
+```
+
+Official video publishing initializes a Videos API upload, uploads the local MP4, finalizes it, then publishes a post:
+
+```bash
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --json
+```
+
 Official article, reshare, update, get, and list commands:
 
 ```bash
@@ -234,6 +248,8 @@ Publish through official LinkedIn APIs:
 ```bash
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
+uv run linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --json
+uv run linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:7323456789012345678 --text "worth reading" --json
 ```

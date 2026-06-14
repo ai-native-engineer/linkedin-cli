@@ -1,0 +1,22 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "linkedin-cli",
+  "description": "Marketplace for the linkedin-cli plugin: drive personal LinkedIn workflows from the terminal — unofficial reads over your own session plus official OAuth publishing.",
+  "owner": {
+    "name": "Aiden Ahn",
+    "email": "senugw0u@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "linkedin-cli",
+      "source": "./",
+      "version": "0.1.0",
+      "description": "Skills that drive the linkedin-cli tool: setup and auth, unofficial reads (feed, saved, profiles, search), and official OAuth publishing (post text/media/article/reshare/update/delete) with sns-json-v1 output.",
+      "category": "productivity",
+      "author": {
+        "name": "Aiden Ahn",
+        "email": "senugw0u@gmail.com"
+      }
+    }
+  ]
+}

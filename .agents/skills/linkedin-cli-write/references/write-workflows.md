@@ -28,6 +28,8 @@ Validate official post payloads without side effects:
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
 uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --dry-run --json
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --dry-run --json
@@ -39,6 +41,8 @@ Publish through official LinkedIn APIs:
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --json
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --json
+uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --json
+uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --json
@@ -120,7 +124,11 @@ Use `--author` or `--linkedin-version` only when the caller explicitly wants to 
 
 Use `--text-file <path>` for long posts. Use `--text-file -` only when the caller intentionally pipes stdin into the command.
 
-`post media` currently supports exactly one local JPG/GIF/PNG image path. Multiple media files, videos, and carousels are outside the current vertical slice.
+`post media` supports exactly one local JPG/GIF/PNG image path.
+
+`post multi-image` supports 2-20 local JPG/GIF/PNG image paths and optional `--alt-text` values. If alt text is provided, pass exactly one `--alt-text` per image.
+
+`post video` supports one local MP4 file. It initializes a Videos API upload, uploads the video bytes, finalizes the upload, then creates the post.
 
 `post article` accepts `--url` plus optional `--title`, `--description`, and `--thumbnail`.
 
@@ -144,7 +152,7 @@ delete_plan = api.plan_delete_post(post_id=result.post_id)
 delete_result = api.delete_post(post_id=result.post_id)
 ```
 
-Use `plan_text_post`, `plan_image_post`, or `plan_delete_post` for no-side-effect validation before mutating LinkedIn.
+Use `plan_text_post`, `plan_image_post`, `plan_multi_image_post`, `plan_video_post`, or `plan_delete_post` for no-side-effect validation before mutating LinkedIn.
 
 ## Identifier Handling
 
@@ -166,10 +174,12 @@ Current implementation details:
 
 - `post text` publishes through the official LinkedIn Posts API
 - `post media` registers an official Images API upload, uploads one image, then publishes through Posts API
+- `post multi-image` registers and uploads 2-20 official Images API assets, then publishes through Posts API
+- `post video` initializes an official Videos API upload, uploads/finalizes the MP4, then publishes through Posts API
 - `post article`, `post reshare`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
 - `post delete` deletes through the official LinkedIn Posts API
-- `post text --dry-run`, `post media --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
-- `linkedin_cli.LinkedInWriteAPI` exposes the same official text and one-image write surface to Python callers
+- `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
+- `linkedin_cli.LinkedInWriteAPI` exposes the same official write surface to Python callers
 - legacy `post "..."` uses Playwright-backed browser fallback
 - `comment` uses Playwright-backed browser fallback
 - `save` and `unsave` use Playwright-backed browser fallback

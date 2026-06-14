@@ -54,11 +54,13 @@ uv run linkedin-cli auth oauth-login
 | Unsave one saved activity | `uv run linkedin-cli saved unsave urn:li:activity:123 --json` |
 | Search people and posts | `uv run linkedin-cli read search "AI engineer" --limit 10 --json` |
 | Fetch one profile | `uv run linkedin-cli read profile seungwon-aiden --json` |
-| Fetch recent posts from a profile | `uv run linkedin profile-posts seungwon-aiden --max 10` |
-| Inspect one activity | `uv run linkedin activity urn:li:activity:123 --json` |
+| Fetch recent posts from a profile | `uv run linkedin-cli read profile-posts seungwon-aiden --limit 10 --json` |
+| Inspect one activity | `uv run linkedin-cli read activity urn:li:activity:123 --json` |
 | Dry-run text post | `uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json` |
 | Publish text post | `uv run linkedin-cli post text --text-file post.md --visibility public --json` |
 | Dry-run image post | `uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json` |
+| Dry-run multi-image post | `uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json` |
+| Dry-run video post | `uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json` |
 | Dry-run article post | `uv run linkedin-cli post article --text-file post.md --url https://example.com --dry-run --json` |
 | Dry-run reshare | `uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json` |
 | Dry-run post update | `uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json` |

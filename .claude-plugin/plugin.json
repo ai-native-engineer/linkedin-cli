@@ -1,39 +1,15 @@
 {
   "name": "linkedin-cli",
-  "description": "AI-native LinkedIn CLI plugin for personal read workflows and official LinkedIn publishing. Read commands are unofficial and use the user's own session.",
   "version": "0.1.0",
+  "description": "AI-native LinkedIn CLI: drive personal LinkedIn workflows from the terminal. Unofficial reads (feed, saved, profiles, search) over your own session, plus official OAuth publishing (post text/media/article/reshare/update/delete) with sns-json-v1 output. Bundles three skills: linkedin-cli, linkedin-cli-auth, linkedin-cli-write.",
   "author": {
-    "name": "Aiden Ahn"
+    "name": "Aiden Ahn",
+    "email": "senugw0u@gmail.com"
   },
+  "homepage": "https://github.com/ai-native-engineer/linkedin-cli",
+  "repository": "https://github.com/ai-native-engineer/linkedin-cli",
   "license": "MIT",
   "keywords": [
-    "linkedin",
-    "cli",
-    "sns-json-v1",
-    "unofficial-read",
-    "official-post",
-    "personal-workflow"
-  ],
-  "commands": [
-    "linkedin-cli auth-status",
-    "linkedin-cli auth oauth-login",
-    "linkedin-cli read feed --limit 5 --json",
-    "linkedin-cli read saved --limit 5 --json",
-    "linkedin-cli read profile <identifier> --json",
-    "linkedin-cli read search <query> --limit 10 --json",
-    "linkedin-cli saved unsave <activity> --json",
-    "linkedin-cli post text --text-file <path> --visibility public --dry-run --json",
-    "linkedin-cli post text --text <text> --visibility public --dry-run --json",
-    "linkedin-cli post media --text <text> --media <path> --visibility public --dry-run --json",
-    "linkedin-cli post article --text <text> --url <url> --visibility public --dry-run --json",
-    "linkedin-cli post reshare <post-id-or-url> --text <text> --visibility public --dry-run --json",
-    "linkedin-cli post update <post-id-or-url> --text <text> --dry-run --json",
-    "linkedin-cli post get <post-id-or-url> --json",
-    "linkedin-cli post list --count 10 --json",
-    "linkedin-cli post delete <post-id-or-url> --dry-run --json",
-    "linkedin-cli post delete <post-id-or-url> --json"
-  ],
-  "tags": [
     "linkedin",
     "cli",
     "sns-json-v1",

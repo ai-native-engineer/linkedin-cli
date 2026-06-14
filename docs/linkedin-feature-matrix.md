@@ -18,15 +18,15 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 |---|---|---:|---|
 | OAuth token issue | `auth oauth-login` | implemented | Saves `~/.config/linkedin/oauth.json`. |
 | Text post create | `post text` | implemented | Uses `/rest/posts`. |
-| Image post create | `post media` | partial | One local image only; uses `/rest/images` + `/rest/posts`. |
+| Image post create | `post media` | implemented | One local image; uses `/rest/images` + `/rest/posts`. |
 | Post delete | `post delete` | implemented | Uses `/rest/posts/{encodedUrn}`. |
 | Post get | `post get` | implemented | Requires official read permission. |
 | Posts by author | `post list` | implemented | Requires official read permission. |
 | Post update | `post update` | implemented | Patch commentary. |
 | Article post | `post article` | implemented | URL/article content. |
 | Reshare | `post reshare` | implemented | Reshare an existing post with commentary. |
-| Multi-image post | `post media --media ... --media ...` | next | Needs multiple asset upload support. |
-| Video post | `post video` | next | Needs video asset upload flow. |
+| Multi-image post | `post multi-image` | implemented | 2-20 local images; uses `/rest/images` + `/rest/posts`. |
+| Video post | `post video` | implemented | Local MP4; uses `/rest/videos` + `/rest/posts`. |
 | Document post | `post document` | next | Needs document asset upload flow. |
 | Poll post | `post poll` | next | Needs poll payload validation. |
 | Organization author | `--author urn:li:organization:*` | partial | OAuth and app permission dependent. |
@@ -53,8 +53,8 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 | Saved posts | `read saved` | implemented | Unofficial web session; pagination can improve. |
 | Profile | `read profile` | implemented | Unofficial web session. |
 | Search | `read search` | implemented | Unofficial web session. |
-| Activity detail | `read activity` | next | Exists as legacy `activity`; promote to canonical JSON. |
-| Profile posts | `read profile-posts` | next | Exists as legacy `profile-posts`; promote to canonical JSON. |
+| Activity detail | `read activity` | implemented | Canonical JSON wrapper over unofficial activity read. |
+| Profile posts | `read profile-posts` | implemented | Canonical JSON wrapper over unofficial profile post read. |
 | Comments read | `read comments` | next | Unofficial fallback if official permission is unavailable. |
 | Reactions read | `read reactions` | next | Unofficial fallback if official permission is unavailable. |
 | Notifications | `read notifications` | restricted | Higher product/ToS risk; implement only if clearly personal and low-volume. |
@@ -72,14 +72,16 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 ## Implementation Order
 
-1. Promote legacy `activity` and `profile-posts` to canonical `read activity` and `read profile-posts`.
-2. Add official `comment` and `reaction` command groups.
-3. Add social metadata commands.
-4. Add multi-image, video, document, and poll publishing.
+1. Add official `comment` and `reaction` command groups.
+2. Add social metadata commands.
+3. Add document and poll publishing.
+4. Harden pagination for unofficial saved/profile-posts reads.
 
 Official references:
 
 - LinkedIn Posts API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
+- LinkedIn MultiImage Post API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/multiimage-post-api
+- LinkedIn Videos API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api
 - LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
 - LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
 - LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api

@@ -17,8 +17,9 @@ compatibility but are not the canonical surface.
 - `linkedin_cli/` — the package. `cli.py` holds the Click commands; `client.py`/`transport.py` drive
   the read path; `oauth*.py`/`publisher.py`/`api.py` drive the official write path;
   `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` is the Playwright fallback.
-- `skills/` — project-local agent skills (`linkedin-cli`, `linkedin-cli-auth`, `linkedin-cli-write`),
-  also exposed as a Claude plugin via `.claude-plugin/`.
+- `.agents/skills/` — source for the three agent skills (`linkedin-cli`, `linkedin-cli-auth`,
+  `linkedin-cli-write`); `skills/` and `.claude/skills/` are symlinks to it. Also shipped as a Claude
+  plugin via `.claude-plugin/` (`plugin.json` + `marketplace.json`). Edit the source, never the symlinks.
 - `tests/` — unit tests; no live LinkedIn session required.
 
 ## Output Contract
@@ -42,7 +43,7 @@ uv run playwright install chromium   # only for browser fallback
   functions over abstractions.
 - Unit tests must not depend on a live LinkedIn session. Mock transport/browser behavior and keep
   live-network checks manual.
-- When CLI behavior changes, update tests in `tests/` and docs (`README.md` + `README.ko.md`) in the
+- When CLI behavior changes, update tests in `tests/` and docs (`README.md` + `README.en.md`) in the
   same change. Keep changes surgical and match the existing style.
 
 ## Security

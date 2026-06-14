@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "linkedin-cli"
+name = "agent-linkedin"
 version = "0.1.0"
 description = "A terminal-first CLI for LinkedIn feed, profiles, search, and core social actions"
 readme = "README.md"
