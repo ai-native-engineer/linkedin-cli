@@ -1,7 +1,7 @@
 interface:
   display_name: "LinkedIn CLI"
   short_description: "Set up and use linkedin-cli"
-  default_prompt: "Use $linkedin-cli for project-local LinkedIn CLI setup, OAuth/cookie auth, read commands, saved posts, UGC post dry-runs, live publishing, and sns-json-v1 output."
+  default_prompt: "Use $linkedin-cli for project-local LinkedIn CLI setup, OAuth/cookie auth, read commands, saved posts, UGC post dry-runs, live publishing, official post deletion, and sns-json-v1 output."
 
 policy:
   allow_implicit_invocation: true
