@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import mimetypes
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 from urllib.parse import quote, unquote, urlencode, urlparse
 
 import httpx
@@ -16,11 +16,38 @@ from .oauth import OAuthConfig
 POSTS_URL = "https://api.linkedin.com/rest/posts"
 REST_POSTS_URL = POSTS_URL
 IMAGES_INITIALIZE_URL = "https://api.linkedin.com/rest/images?action=initializeUpload"
+VIDEOS_INITIALIZE_URL = "https://api.linkedin.com/rest/videos?action=initializeUpload"
+VIDEOS_FINALIZE_URL = "https://api.linkedin.com/rest/videos?action=finalizeUpload"
+SOCIAL_ACTIONS_URL = "https://api.linkedin.com/rest/socialActions"
+REACTIONS_URL = "https://api.linkedin.com/rest/reactions"
+SOCIAL_METADATA_URL = "https://api.linkedin.com/rest/socialMetadata"
 RESTLI_PROTOCOL_VERSION = "2.0.0"
 SUPPORTED_IMAGE_CONTENT_TYPES = {"image/gif", "image/jpeg", "image/png"}
+SUPPORTED_VIDEO_CONTENT_TYPES = {"video/mp4"}
+MIN_MULTI_IMAGE_COUNT = 2
+MAX_MULTI_IMAGE_COUNT = 20
 VISIBILITY_MAP = {
     "public": "PUBLIC",
     "connections": "CONNECTIONS",
+}
+REACTION_TYPE_MAP = {
+    "like": "LIKE",
+    "celebrate": "PRAISE",
+    "praise": "PRAISE",
+    "support": "APPRECIATION",
+    "appreciation": "APPRECIATION",
+    "love": "EMPATHY",
+    "empathy": "EMPATHY",
+    "insightful": "INTEREST",
+    "interest": "INTEREST",
+    "funny": "ENTERTAINMENT",
+    "entertainment": "ENTERTAINMENT",
+    "curious": "MAYBE",
+    "maybe": "MAYBE",
+}
+COMMENT_STATE_MAP = {
+    "open": "OPEN",
+    "closed": "CLOSED",
 }
 
 
@@ -90,6 +117,52 @@ class ListPostsResult:
     raw: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class CommentResult:
+    """Official comment mutation or retrieval result."""
+
+    entity_urn: str
+    comment_id: Optional[str]
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CommentListResult:
+    """Official comments retrieval result."""
+
+    entity_urn: str
+    elements: list[dict[str, Any]]
+    paging: dict[str, Any]
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ReactionResult:
+    """Official reaction mutation or retrieval result."""
+
+    actor_urn: str
+    entity_urn: str
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SocialMetadataResult:
+    """Official social metadata retrieval or update result."""
+
+    entity_urn: str
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SocialActionResult:
+    """Successful official social action with no body requirement."""
+
+    action: str
+    entity_urn: str
+    completed_at: str
+    raw: dict[str, Any]
+
+
 class LinkedInPublisher:
     """Small wrapper around LinkedIn's official Posts API."""
 
@@ -125,6 +198,45 @@ class LinkedInPublisher:
             text=text,
             visibility=visibility,
             content={"media": {"id": image_urn}},
+        )
+
+    def build_multi_image_payload(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        images: list[dict[str, str]],
+    ) -> dict[str, Any]:
+        """Build the official Posts API payload for a multi-image post."""
+        return self._build_rest_post_payload(
+            text=text,
+            visibility=visibility,
+            content={"multiImage": {"images": _validate_multi_image_entries(images)}},
+        )
+
+    def build_video_payload(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        video_urn: str,
+        title: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Build the official Posts API payload for a video post."""
+        video = video_urn.strip()
+        if not video:
+            raise LinkedInPublishError(
+                "Video URN cannot be empty.",
+                code="media_invalid",
+                retryable=False,
+            )
+        media: dict[str, str] = {"id": video}
+        if title and title.strip():
+            media["title"] = title.strip()
+        return self._build_rest_post_payload(
+            text=text,
+            visibility=visibility,
+            content={"media": media},
         )
 
     def build_article_payload(
@@ -233,17 +345,58 @@ class LinkedInPublisher:
 
     def post_image(self, *, text: str, visibility: str, media_path: Path) -> PublishResult:
         """Upload one local image and publish it in a post."""
-        path = media_path.expanduser()
-        if not path.exists() or not path.is_file():
-            raise LinkedInPublishError(
-                f"Media file not found: {path}",
-                code="media_invalid",
-                retryable=False,
-            )
+        path = _existing_media_file(media_path)
         content_type = _image_content_type(path)
         image_urn = self._upload_image(path, content_type=content_type)
         payload = self.build_media_payload(text=text, visibility=visibility, image_urn=image_urn)
         return self._create_post(payload=payload, visibility=visibility, media={"image": image_urn})
+
+    def post_multi_image(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        media_paths: list[Path],
+        alt_texts: Sequence[str] = (),
+    ) -> PublishResult:
+        """Upload multiple local images and publish them in a post."""
+        _validate_multi_image_count(len(media_paths))
+        paths = [_existing_media_file(path) for path in media_paths]
+        alt_values = _normalize_alt_texts(alt_texts, media_count=len(paths))
+        images: list[dict[str, str]] = []
+        for index, path in enumerate(paths):
+            content_type = _image_content_type(path)
+            image_urn = self._upload_image(path, content_type=content_type)
+            item = {"id": image_urn}
+            if alt_values[index]:
+                item["altText"] = alt_values[index]
+            images.append(item)
+        payload = self.build_multi_image_payload(text=text, visibility=visibility, images=images)
+        return self._create_post(
+            payload=payload,
+            visibility=visibility,
+            media={"multiImage": images},
+        )
+
+    def post_video(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        media_path: Path,
+        title: Optional[str] = None,
+    ) -> PublishResult:
+        """Upload one local MP4 video and publish it in a post."""
+        path = _existing_media_file(media_path)
+        _video_content_type(path)
+        video_urn = self._upload_video(path)
+        payload = self.build_video_payload(
+            text=text,
+            visibility=visibility,
+            video_urn=video_urn,
+            title=title,
+        )
+        return self._create_post(payload=payload, visibility=visibility, media={"video": video_urn})
 
     def post_article(
         self,
@@ -423,6 +576,232 @@ class LinkedInPublisher:
             paging = {}
         return ListPostsResult(author_urn=author, elements=elements, paging=paging, raw=response)
 
+    def list_comments(
+        self,
+        *,
+        entity: str,
+        count: int = 10,
+        start: int = 0,
+    ) -> CommentListResult:
+        """Retrieve comments on a post or comment through LinkedIn's official Comments API."""
+        entity_urn = normalize_social_entity_id(entity)
+        if count < 1 or count > 100:
+            raise LinkedInPublishError(
+                "Count must be between 1 and 100.",
+                code="invalid_request",
+                retryable=False,
+            )
+        if start < 0:
+            raise LinkedInPublishError(
+                "Start must be greater than or equal to 0.",
+                code="invalid_request",
+                retryable=False,
+            )
+        response = self._get(
+            f"{SOCIAL_ACTIONS_URL}/{quote(entity_urn, safe='')}/comments",
+            params={"count": str(count), "start": str(start)},
+        )
+        elements = response.get("elements")
+        if not isinstance(elements, list):
+            elements = []
+        paging = response.get("paging")
+        if not isinstance(paging, dict):
+            paging = {}
+        return CommentListResult(entity_urn=entity_urn, elements=elements, paging=paging, raw=response)
+
+    def get_comment(self, *, entity: str, comment_id: str) -> CommentResult:
+        """Retrieve one comment through LinkedIn's official Comments API."""
+        entity_urn = normalize_social_entity_id(entity)
+        comment = _normalize_non_empty(comment_id, label="Comment id")
+        response = self._get(
+            f"{SOCIAL_ACTIONS_URL}/{quote(entity_urn, safe='')}/comments/{quote(comment, safe='')}",
+        )
+        return CommentResult(entity_urn=entity_urn, comment_id=comment, raw=response)
+
+    def create_comment(
+        self,
+        *,
+        entity: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+        parent_comment: Optional[str] = None,
+    ) -> CommentResult:
+        """Create a comment through LinkedIn's official Comments API."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        body = _normalize_non_empty(text, label="Comment text")
+        payload: dict[str, Any] = {
+            "actor": actor,
+            "object": entity_urn,
+            "message": {"text": body},
+        }
+        if parent_comment:
+            payload["parentComment"] = normalize_social_entity_id(parent_comment)
+        response = self._post_json(
+            f"{SOCIAL_ACTIONS_URL}/{quote(entity_urn, safe='')}/comments",
+            payload=payload,
+            expected_statuses={200, 201},
+            api_name="LinkedIn Comments API create",
+        )
+        comment_id = response.get("id") if isinstance(response.get("id"), str) else None
+        return CommentResult(entity_urn=entity_urn, comment_id=comment_id, raw=response)
+
+    def update_comment(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Update a comment through LinkedIn's official Comments API."""
+        entity_urn = normalize_social_entity_id(entity)
+        comment = _normalize_non_empty(comment_id, label="Comment id")
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        body = _normalize_non_empty(text, label="Comment text")
+        payload = {"patch": {"message": {"$set": {"text": body}}}}
+        response = self._post_json(
+            f"{SOCIAL_ACTIONS_URL}/{quote(entity_urn, safe='')}/comments/{quote(comment, safe='')}",
+            params={"actor": actor},
+            payload=payload,
+            method="PARTIAL_UPDATE",
+            expected_statuses={200, 204},
+            api_name="LinkedIn Comments API update",
+        )
+        return SocialActionResult(
+            action="comment.update",
+            entity_urn=entity_urn,
+            completed_at=utc_now_iso(),
+            raw=response,
+        )
+
+    def list_reactions(
+        self,
+        *,
+        entity: str,
+        count: int = 10,
+        start: int = 0,
+    ) -> CommentListResult:
+        """Retrieve reactions on a post or comment through LinkedIn's official Reactions API."""
+        entity_urn = normalize_social_entity_id(entity)
+        if count < 1 or count > 100:
+            raise LinkedInPublishError(
+                "Count must be between 1 and 100.",
+                code="invalid_request",
+                retryable=False,
+            )
+        if start < 0:
+            raise LinkedInPublishError(
+                "Start must be greater than or equal to 0.",
+                code="invalid_request",
+                retryable=False,
+            )
+        key = f"(entity:{quote(entity_urn, safe='')})"
+        response = self._get(
+            f"{REACTIONS_URL}/{key}",
+            params={
+                "q": "entity",
+                "sort": "(value:REVERSE_CHRONOLOGICAL)",
+                "count": str(count),
+                "start": str(start),
+            },
+        )
+        elements = response.get("elements")
+        if not isinstance(elements, list):
+            elements = []
+        paging = response.get("paging")
+        if not isinstance(paging, dict):
+            paging = {}
+        return CommentListResult(entity_urn=entity_urn, elements=elements, paging=paging, raw=response)
+
+    def get_reaction(self, *, entity: str, actor_urn: Optional[str] = None) -> ReactionResult:
+        """Retrieve the current actor's reaction to a post or comment."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        response = self._get(f"{REACTIONS_URL}/{_reaction_key(actor=actor, entity=entity_urn)}")
+        return ReactionResult(actor_urn=actor, entity_urn=entity_urn, raw=response)
+
+    def create_reaction(
+        self,
+        *,
+        entity: str,
+        reaction_type: str = "like",
+        actor_urn: Optional[str] = None,
+    ) -> ReactionResult:
+        """Create a reaction through LinkedIn's official Reactions API."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        payload = {
+            "root": entity_urn,
+            "reactionType": normalize_reaction_type(reaction_type),
+        }
+        response = self._post_json(
+            REACTIONS_URL,
+            params={"actor": actor},
+            payload=payload,
+            expected_statuses={200, 201},
+            api_name="LinkedIn Reactions API create",
+        )
+        return ReactionResult(actor_urn=actor, entity_urn=entity_urn, raw=response)
+
+    def delete_reaction(
+        self,
+        *,
+        entity: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Delete the current actor's reaction through LinkedIn's official Reactions API."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        url = f"{REACTIONS_URL}/{_reaction_key(actor=actor, entity=entity_urn)}"
+        self._delete(url, expected_statuses={204}, api_name="LinkedIn Reactions API delete")
+        return SocialActionResult(
+            action="reaction.delete",
+            entity_urn=entity_urn,
+            completed_at=utc_now_iso(),
+            raw={
+                "status_code": 204,
+                "request": {"api": "linkedin.reactions.delete", "actor": actor, "entity": entity_urn},
+            },
+        )
+
+    def get_social_metadata(self, *, entity: str) -> SocialMetadataResult:
+        """Retrieve social metadata through LinkedIn's official Social Metadata API."""
+        entity_urn = normalize_social_entity_id(entity)
+        response = self._get(f"{SOCIAL_METADATA_URL}/{quote(entity_urn, safe='')}")
+        return SocialMetadataResult(entity_urn=entity_urn, raw=response)
+
+    def update_comments_state(
+        self,
+        *,
+        entity: str,
+        state: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialMetadataResult:
+        """Open or close comments through LinkedIn's official Social Metadata API."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        comments_state = normalize_comments_state(state)
+        response = self._post_json(
+            f"{SOCIAL_METADATA_URL}/{quote(entity_urn, safe='')}",
+            params={"actor": actor},
+            payload={"patch": {"$set": {"commentsState": comments_state}}},
+            method="PARTIAL_UPDATE",
+            expected_statuses={200, 202},
+            api_name="LinkedIn Social Metadata API update",
+        )
+        if not response:
+            response = {
+                "status_code": 202,
+                "request": {
+                    "api": "linkedin.social_metadata.update",
+                    "actor": actor,
+                    "entity": entity_urn,
+                    "commentsState": comments_state,
+                },
+            }
+        return SocialMetadataResult(entity_urn=entity_urn, raw=response)
+
     def _create_post(
         self,
         *,
@@ -546,6 +925,157 @@ class LinkedInPublisher:
             raise self._error_from_response(upload_response, fallback_code="media_upload_failed")
         return str(image_urn)
 
+    def _upload_video(self, path: Path) -> str:
+        file_size = path.stat().st_size
+        try:
+            init_response = self.client.post(
+                VIDEOS_INITIALIZE_URL,
+                headers=self._rest_headers(content_type="application/json"),
+                json={
+                    "initializeUploadRequest": {
+                        "owner": self.oauth.author_urn,
+                        "fileSizeBytes": file_size,
+                        "uploadCaptions": False,
+                        "uploadThumbnail": False,
+                    }
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                "LinkedIn Videos API initialize upload request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"LinkedIn Videos API initialize upload request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if init_response.status_code != 200:
+            raise self._error_from_response(init_response, fallback_code="media_upload_failed")
+
+        try:
+            value = init_response.json().get("value", {})
+        except ValueError as exc:
+            raise LinkedInPublishError(
+                "LinkedIn Videos API returned invalid JSON.",
+                code="media_upload_failed",
+                retryable=True,
+                status_code=init_response.status_code,
+            ) from exc
+        video_urn = value.get("video")
+        upload_instructions = value.get("uploadInstructions")
+        upload_token = value.get("uploadToken", "")
+        if not video_urn or not isinstance(upload_instructions, list) or not upload_instructions:
+            raise LinkedInPublishError(
+                "LinkedIn Videos API did not return video URN and upload instructions.",
+                code="media_upload_failed",
+                retryable=True,
+                status_code=init_response.status_code,
+            )
+
+        uploaded_part_ids = self._upload_video_parts(
+            path,
+            upload_instructions=upload_instructions,
+        )
+        try:
+            finalize_response = self.client.post(
+                VIDEOS_FINALIZE_URL,
+                headers=self._rest_headers(content_type="application/json"),
+                json={
+                    "finalizeUploadRequest": {
+                        "video": video_urn,
+                        "uploadToken": str(upload_token or ""),
+                        "uploadedPartIds": uploaded_part_ids,
+                    }
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                "LinkedIn Videos API finalize upload request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"LinkedIn Videos API finalize upload request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if finalize_response.status_code != 200:
+            raise self._error_from_response(finalize_response, fallback_code="media_upload_failed")
+        return str(video_urn)
+
+    def _upload_video_parts(
+        self,
+        path: Path,
+        *,
+        upload_instructions: list[Any],
+    ) -> list[str]:
+        uploaded_part_ids: list[str] = []
+        with path.open("rb") as file:
+            for instruction in upload_instructions:
+                if not isinstance(instruction, dict):
+                    raise LinkedInPublishError(
+                        "LinkedIn Videos API returned malformed upload instructions.",
+                        code="media_upload_failed",
+                        retryable=True,
+                    )
+                upload_url = instruction.get("uploadUrl")
+                if not upload_url:
+                    raise LinkedInPublishError(
+                        "LinkedIn Videos API upload instruction is missing uploadUrl.",
+                        code="media_upload_failed",
+                        retryable=True,
+                    )
+                first_byte = _coerce_video_byte(instruction.get("firstByte"), default=0)
+                last_byte = _coerce_video_byte(
+                    instruction.get("lastByte"),
+                    default=path.stat().st_size - 1,
+                )
+                if first_byte < 0 or last_byte < first_byte:
+                    raise LinkedInPublishError(
+                        "LinkedIn Videos API returned an invalid upload byte range.",
+                        code="media_upload_failed",
+                        retryable=True,
+                    )
+                file.seek(first_byte)
+                content = file.read(last_byte - first_byte + 1)
+                try:
+                    upload_response = self.client.put(
+                        upload_url,
+                        content=content,
+                        headers={"Content-Type": "application/octet-stream"},
+                    )
+                except httpx.TimeoutException as exc:
+                    raise LinkedInPublishError(
+                        "LinkedIn video upload request timed out.",
+                        code="upstream_unavailable",
+                        retryable=True,
+                    ) from exc
+                except httpx.HTTPError as exc:
+                    raise LinkedInPublishError(
+                        f"LinkedIn video upload request failed: {exc}",
+                        code="upstream_unavailable",
+                        retryable=True,
+                    ) from exc
+                if not 200 <= upload_response.status_code <= 299:
+                    raise self._error_from_response(
+                        upload_response,
+                        fallback_code="media_upload_failed",
+                    )
+                etag = upload_response.headers.get("etag") or upload_response.headers.get("ETag")
+                if not etag:
+                    raise LinkedInPublishError(
+                        "LinkedIn video upload response did not return an ETag.",
+                        code="media_upload_failed",
+                        retryable=True,
+                        status_code=upload_response.status_code,
+                    )
+                uploaded_part_ids.append(etag.strip('"'))
+        return uploaded_part_ids
+
     def _get(
         self,
         url: str,
@@ -592,6 +1122,88 @@ class LinkedInPublisher:
                 status_code=response.status_code,
             )
         return payload
+
+    def _post_json(
+        self,
+        url: str,
+        *,
+        payload: dict[str, Any],
+        expected_statuses: set[int],
+        api_name: str,
+        params: Optional[dict[str, str]] = None,
+        method: Optional[str] = None,
+    ) -> dict[str, Any]:
+        request_url = _url_with_params(url, params=params)
+        try:
+            response = self.client.post(
+                request_url,
+                headers=self._rest_headers(method=method, content_type="application/json"),
+                json=payload,
+            )
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                f"{api_name} request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"{api_name} request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if response.status_code not in expected_statuses:
+            raise self._error_from_response(response)
+        if response.status_code == 204 or not response.content:
+            return {
+                "status_code": response.status_code,
+                "request": {"url": request_url, "payload": payload},
+            }
+        try:
+            parsed = response.json()
+        except ValueError as exc:
+            raise LinkedInPublishError(
+                f"{api_name} returned invalid JSON.",
+                code="contract_error",
+                retryable=True,
+                status_code=response.status_code,
+            ) from exc
+        if not isinstance(parsed, dict):
+            raise LinkedInPublishError(
+                f"{api_name} returned a non-object response.",
+                code="contract_error",
+                retryable=True,
+                status_code=response.status_code,
+            )
+        parsed.setdefault("status_code", response.status_code)
+        restli_id = response.headers.get("x-restli-id") or response.headers.get("x-resourceidentity-urn")
+        if restli_id:
+            parsed.setdefault("headers", {})["x-restli-id"] = restli_id
+        return parsed
+
+    def _delete(
+        self,
+        url: str,
+        *,
+        expected_statuses: set[int],
+        api_name: str,
+    ) -> None:
+        try:
+            response = self.client.delete(url, headers=self._rest_headers(method="DELETE"))
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                f"{api_name} request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"{api_name} request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if response.status_code not in expected_statuses:
+            raise self._error_from_response(response)
 
     def _rest_headers(
         self,
@@ -676,6 +1288,27 @@ def _coerce_retry_after(value: str) -> Optional[int]:
         return None
 
 
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _url_with_params(url: str, *, params: Optional[dict[str, str]] = None) -> str:
+    if not params:
+        return url
+    return f"{url}?{urlencode(params, quote_via=quote)}"
+
+
+def _existing_media_file(path: Path) -> Path:
+    expanded = path.expanduser()
+    if not expanded.exists() or not expanded.is_file():
+        raise LinkedInPublishError(
+            f"Media file not found: {expanded}",
+            code="media_invalid",
+            retryable=False,
+        )
+    return expanded
+
+
 def _image_content_type(path: Path) -> str:
     content_type = mimetypes.guess_type(path.name)[0]
     if content_type not in SUPPORTED_IMAGE_CONTENT_TYPES:
@@ -686,6 +1319,178 @@ def _image_content_type(path: Path) -> str:
             details={"supported_content_types": sorted(SUPPORTED_IMAGE_CONTENT_TYPES)},
         )
     return content_type
+
+
+def _video_content_type(path: Path) -> str:
+    content_type = mimetypes.guess_type(path.name)[0]
+    if content_type not in SUPPORTED_VIDEO_CONTENT_TYPES:
+        raise LinkedInPublishError(
+            f"Unsupported video type for LinkedIn upload: {path.name}",
+            code="media_invalid",
+            retryable=False,
+            details={"supported_content_types": sorted(SUPPORTED_VIDEO_CONTENT_TYPES)},
+        )
+    return content_type
+
+
+def _validate_multi_image_count(count: int) -> None:
+    if count < MIN_MULTI_IMAGE_COUNT or count > MAX_MULTI_IMAGE_COUNT:
+        raise LinkedInPublishError(
+            "LinkedIn multi-image posts require between 2 and 20 images.",
+            code="media_invalid",
+            retryable=False,
+            details={
+                "media_count": count,
+                "min_media_count": MIN_MULTI_IMAGE_COUNT,
+                "max_media_count": MAX_MULTI_IMAGE_COUNT,
+            },
+        )
+
+
+def _normalize_alt_texts(alt_texts: Sequence[str], *, media_count: int) -> list[str]:
+    values = [value.strip() for value in alt_texts]
+    if values and len(values) != media_count:
+        raise LinkedInPublishError(
+            "Pass either no --alt-text values or exactly one --alt-text per image.",
+            code="media_invalid",
+            retryable=False,
+            details={"alt_text_count": len(values), "media_count": media_count},
+        )
+    if not values:
+        return [""] * media_count
+    return values
+
+
+def _validate_multi_image_entries(images: list[dict[str, str]]) -> list[dict[str, str]]:
+    _validate_multi_image_count(len(images))
+    normalized: list[dict[str, str]] = []
+    for image in images:
+        image_id = image.get("id", "").strip()
+        if not image_id:
+            raise LinkedInPublishError(
+                "Each multi-image item requires an image URN.",
+                code="media_invalid",
+                retryable=False,
+            )
+        item = {"id": image_id}
+        alt_text = image.get("altText", "").strip()
+        if alt_text:
+            item["altText"] = alt_text
+        normalized.append(item)
+    return normalized
+
+
+def _coerce_video_byte(value: Any, *, default: int) -> int:
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise LinkedInPublishError(
+            "LinkedIn Videos API returned a non-integer upload byte range.",
+            code="media_upload_failed",
+            retryable=True,
+        ) from exc
+
+
+def _normalize_non_empty(value: str, *, label: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise LinkedInPublishError(
+            f"{label} cannot be empty.",
+            code="invalid_request",
+            retryable=False,
+        )
+    return normalized
+
+
+def _normalize_actor_urn(value: str) -> str:
+    actor = _normalize_non_empty(value, label="Actor URN")
+    if actor.startswith(("urn:li:person:", "urn:li:organization:")):
+        return actor
+    raise LinkedInPublishError(
+        "Actor must be a LinkedIn person or organization URN.",
+        code="invalid_request",
+        retryable=False,
+        details={"accepted_prefixes": ["urn:li:person:", "urn:li:organization:"]},
+    )
+
+
+def normalize_reaction_type(value: str) -> str:
+    normalized = _normalize_non_empty(value, label="Reaction type").lower()
+    api_value = REACTION_TYPE_MAP.get(normalized)
+    if api_value:
+        return api_value
+    upper_value = normalized.upper()
+    if upper_value in set(REACTION_TYPE_MAP.values()):
+        return upper_value
+    raise LinkedInPublishError(
+        f"Unsupported reaction type: {value}",
+        code="invalid_request",
+        retryable=False,
+        details={"supported_reaction_types": sorted(REACTION_TYPE_MAP)},
+    )
+
+
+def normalize_comments_state(value: str) -> str:
+    normalized = _normalize_non_empty(value, label="Comments state").lower()
+    api_value = COMMENT_STATE_MAP.get(normalized)
+    if api_value:
+        return api_value
+    upper_value = normalized.upper()
+    if upper_value in set(COMMENT_STATE_MAP.values()):
+        return upper_value
+    raise LinkedInPublishError(
+        f"Unsupported comments state: {value}",
+        code="invalid_request",
+        retryable=False,
+        details={"supported_comments_states": sorted(COMMENT_STATE_MAP)},
+    )
+
+
+def _reaction_key(*, actor: str, entity: str) -> str:
+    return f"(actor:{quote(actor, safe='')},entity:{quote(entity, safe='')})"
+
+
+def normalize_social_entity_id(entity: str) -> str:
+    """Return a URN accepted by LinkedIn's official social action APIs."""
+    value = _normalize_non_empty(entity, label="Entity")
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.netloc:
+        path_parts = [unquote(part) for part in parsed.path.split("/") if part]
+        if "feed" in path_parts and "update" in path_parts:
+            value = path_parts[-1]
+        else:
+            raise LinkedInPublishError(
+                "LinkedIn social APIs accept a feed update URL or a supported entity URN.",
+                code="invalid_request",
+                retryable=False,
+            )
+    value = unquote(value.strip().rstrip("/"))
+    if value.startswith(
+        (
+            "urn:li:share:",
+            "urn:li:ugcPost:",
+            "urn:li:activity:",
+            "urn:li:comment:",
+        )
+    ):
+        return value
+    if value.isdigit():
+        return f"urn:li:share:{value}"
+    raise LinkedInPublishError(
+        "LinkedIn social APIs accept share, ugcPost, activity, or comment URNs.",
+        code="invalid_request",
+        retryable=False,
+        details={
+            "accepted_prefixes": [
+                "urn:li:share:",
+                "urn:li:ugcPost:",
+                "urn:li:activity:",
+                "urn:li:comment:",
+            ]
+        },
+    )
 
 
 def normalize_post_id(post_id: str) -> str:

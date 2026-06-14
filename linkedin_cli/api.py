@@ -11,16 +11,23 @@ import httpx
 from .oauth import DEFAULT_LINKEDIN_VERSION
 from .oauth import OAuthConfig
 from .oauth import load_oauth_config
-from .publisher import LinkedInPublisher
 from .publisher import DeleteResult
+from .publisher import CommentListResult
+from .publisher import CommentResult
 from .publisher import GetPostResult
+from .publisher import LinkedInPublishError
+from .publisher import LinkedInPublisher
 from .publisher import ListPostsResult
 from .publisher import PublishResult
+from .publisher import ReactionResult
+from .publisher import SocialActionResult
+from .publisher import SocialMetadataResult
 from .publisher import UpdateResult
 
 DRY_RUN_ACCESS_TOKEN = "DRY_RUN"
 DRY_RUN_AUTHOR_URN = "urn:li:person:DRY_RUN"
 DRY_RUN_IMAGE_URN = "urn:li:image:DRY_RUN"
+DRY_RUN_VIDEO_URN = "urn:li:video:DRY_RUN"
 
 
 @dataclass(frozen=True)
@@ -192,6 +199,106 @@ class LinkedInWriteAPI:
             media_path=Path(media_path),
         )
 
+    def plan_multi_image_post(
+        self,
+        *,
+        text: str,
+        media_paths: list[Union[str, Path]],
+        alt_texts: tuple[str, ...] = (),
+        visibility: str = "public",
+    ) -> PostPlan:
+        """Validate and build the official Posts API payload shape for multiple images."""
+        paths = tuple(str(Path(path).expanduser()) for path in media_paths)
+        if alt_texts and len(alt_texts) != len(paths):
+            raise LinkedInPublishError(
+                "Pass either no --alt-text values or exactly one --alt-text per image.",
+                code="media_invalid",
+                retryable=False,
+                details={"alt_text_count": len(alt_texts), "media_count": len(paths)},
+            )
+        images: list[dict[str, str]] = []
+        for index in range(len(paths)):
+            item = {"id": f"urn:li:image:DRY_RUN_{index + 1}"}
+            if alt_texts:
+                item["altText"] = alt_texts[index]
+            images.append(item)
+        payload = self.publisher.build_multi_image_payload(
+            text=text,
+            visibility=visibility,
+            images=images,
+        )
+        return PostPlan(
+            command="post.multi_image",
+            visibility=visibility,
+            text_length=len(_payload_commentary(payload)),
+            media_count=len(paths),
+            api="linkedin.posts+images",
+            author_urn=self.oauth.author_urn,
+            linkedin_version=self.oauth.linkedin_version,
+            payload=payload,
+            media_paths=paths,
+        )
+
+    def create_multi_image_post(
+        self,
+        *,
+        text: str,
+        media_paths: list[Union[str, Path]],
+        alt_texts: tuple[str, ...] = (),
+        visibility: str = "public",
+    ) -> PublishResult:
+        """Upload multiple local images and publish them through official LinkedIn APIs."""
+        return self.publisher.post_multi_image(
+            text=text,
+            visibility=visibility,
+            media_paths=[Path(path) for path in media_paths],
+            alt_texts=alt_texts,
+        )
+
+    def plan_video_post(
+        self,
+        *,
+        text: str,
+        media_path: Union[str, Path],
+        visibility: str = "public",
+        title: Optional[str] = None,
+    ) -> PostPlan:
+        """Validate and build the official Posts API payload shape for one video post."""
+        path = Path(media_path).expanduser()
+        payload = self.publisher.build_video_payload(
+            text=text,
+            visibility=visibility,
+            video_urn=DRY_RUN_VIDEO_URN,
+            title=title,
+        )
+        return PostPlan(
+            command="post.video",
+            visibility=visibility,
+            text_length=len(_payload_commentary(payload)),
+            media_count=1,
+            api="linkedin.posts+videos",
+            author_urn=self.oauth.author_urn,
+            linkedin_version=self.oauth.linkedin_version,
+            payload=payload,
+            media_paths=(str(path),),
+        )
+
+    def create_video_post(
+        self,
+        *,
+        text: str,
+        media_path: Union[str, Path],
+        visibility: str = "public",
+        title: Optional[str] = None,
+    ) -> PublishResult:
+        """Upload one local video and publish it through official LinkedIn APIs."""
+        return self.publisher.post_video(
+            text=text,
+            visibility=visibility,
+            media_path=Path(media_path),
+            title=title,
+        )
+
     def plan_delete_post(self, *, post_id: str) -> DeletePlan:
         """Validate and build the official Posts API delete target without deleting it."""
         normalized = self.publisher.normalize_delete_post_id(post_id)
@@ -324,6 +431,95 @@ class LinkedInWriteAPI:
             start=start,
             sort_by=sort_by,
             view_context=view_context,
+        )
+
+    def list_comments(self, *, entity: str, count: int = 10, start: int = 0) -> CommentListResult:
+        """Retrieve comments through LinkedIn's official Comments API."""
+        return self.publisher.list_comments(entity=entity, count=count, start=start)
+
+    def get_comment(self, *, entity: str, comment_id: str) -> CommentResult:
+        """Retrieve one comment through LinkedIn's official Comments API."""
+        return self.publisher.get_comment(entity=entity, comment_id=comment_id)
+
+    def create_comment(
+        self,
+        *,
+        entity: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+        parent_comment: Optional[str] = None,
+    ) -> CommentResult:
+        """Create a comment through LinkedIn's official Comments API."""
+        return self.publisher.create_comment(
+            entity=entity,
+            text=text,
+            actor_urn=actor_urn,
+            parent_comment=parent_comment,
+        )
+
+    def update_comment(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Update a comment through LinkedIn's official Comments API."""
+        return self.publisher.update_comment(
+            entity=entity,
+            comment_id=comment_id,
+            text=text,
+            actor_urn=actor_urn,
+        )
+
+    def list_reactions(self, *, entity: str, count: int = 10, start: int = 0) -> CommentListResult:
+        """Retrieve reactions through LinkedIn's official Reactions API."""
+        return self.publisher.list_reactions(entity=entity, count=count, start=start)
+
+    def get_reaction(self, *, entity: str, actor_urn: Optional[str] = None) -> ReactionResult:
+        """Retrieve the current actor's reaction through LinkedIn's official Reactions API."""
+        return self.publisher.get_reaction(entity=entity, actor_urn=actor_urn)
+
+    def create_reaction(
+        self,
+        *,
+        entity: str,
+        reaction_type: str = "like",
+        actor_urn: Optional[str] = None,
+    ) -> ReactionResult:
+        """Create a reaction through LinkedIn's official Reactions API."""
+        return self.publisher.create_reaction(
+            entity=entity,
+            reaction_type=reaction_type,
+            actor_urn=actor_urn,
+        )
+
+    def delete_reaction(
+        self,
+        *,
+        entity: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Delete the current actor's reaction through LinkedIn's official Reactions API."""
+        return self.publisher.delete_reaction(entity=entity, actor_urn=actor_urn)
+
+    def get_social_metadata(self, *, entity: str) -> SocialMetadataResult:
+        """Retrieve social metadata through LinkedIn's official Social Metadata API."""
+        return self.publisher.get_social_metadata(entity=entity)
+
+    def update_comments_state(
+        self,
+        *,
+        entity: str,
+        state: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialMetadataResult:
+        """Open or close comments through LinkedIn's official Social Metadata API."""
+        return self.publisher.update_comments_state(
+            entity=entity,
+            state=state,
+            actor_urn=actor_urn,
         )
 
 

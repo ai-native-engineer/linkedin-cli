@@ -679,6 +679,235 @@ def test_post_media_publish_json_contract_output(monkeypatch) -> None:
     assert payload["data"]["post"]["raw"]["request"]["media"] == {"image": "urn:li:image:abc"}
 
 
+def test_post_multi_image_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "multi-image",
+            "--text",
+            "hello images",
+            "--media",
+            "one.png",
+            "--media",
+            "two.jpg",
+            "--alt-text",
+            "one alt",
+            "--alt-text",
+            "two alt",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.multi_image"
+    assert payload["source"] == "official"
+    assert payload["request"]["media_count"] == 2
+    assert payload["request"]["alt_text_count"] == 2
+    assert payload["data"]["planned"]["api"] == "linkedin.posts+images"
+    assert payload["data"]["planned"]["media_count"] == 2
+    assert payload["data"]["planned"]["min_media_count"] == 2
+    assert payload["data"]["planned"]["max_media_count"] == 20
+
+
+def test_post_multi_image_rejects_single_image_json_contract() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "multi-image",
+            "--text",
+            "hello images",
+            "--media",
+            "one.png",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["command"] == "post.multi_image"
+    assert payload["error"]["code"] == "media_invalid"
+    assert payload["error"]["details"]["min_media_count"] == 2
+
+
+def test_post_multi_image_rejects_alt_text_mismatch_json_contract() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "multi-image",
+            "--text",
+            "hello images",
+            "--media",
+            "one.png",
+            "--media",
+            "two.jpg",
+            "--alt-text",
+            "one alt",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["command"] == "post.multi_image"
+    assert payload["error"]["code"] == "media_invalid"
+    assert payload["error"]["details"] == {"alt_text_count": 1, "media_count": 2}
+
+
+def test_post_multi_image_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_multi_image_post(self, *, text, visibility, media_paths, alt_texts):
+            assert text == "hello images"
+            assert visibility == "public"
+            assert media_paths == ["one.png", "two.jpg"]
+            assert alt_texts == ("one alt", "two alt")
+            return PublishResult(
+                post_id="urn:li:share:multi",
+                url="https://www.linkedin.com/feed/update/urn:li:share:multi/",
+                created_at="2026-06-15T00:00:00Z",
+                visibility="public",
+                raw={
+                    "status_code": 201,
+                    "request": {
+                        "media": {
+                            "multiImage": [
+                                {"id": "urn:li:image:one"},
+                                {"id": "urn:li:image:two"},
+                            ]
+                        }
+                    },
+                },
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "multi-image",
+            "--text",
+            "hello images",
+            "--media",
+            "one.png",
+            "--media",
+            "two.jpg",
+            "--alt-text",
+            "one alt",
+            "--alt-text",
+            "two alt",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.multi_image"
+    assert payload["data"]["post"]["id"] == "urn:li:share:multi"
+
+
+def test_post_video_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "video",
+            "--text",
+            "hello video",
+            "--video",
+            "clip.mp4",
+            "--title",
+            "Demo",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.video"
+    assert payload["source"] == "official"
+    assert payload["request"]["media_count"] == 1
+    assert payload["request"]["video"] == "clip.mp4"
+    assert payload["data"]["planned"]["api"] == "linkedin.posts+videos"
+    assert payload["data"]["planned"]["media_path"].endswith("clip.mp4")
+    assert payload["data"]["planned"]["title"] == "Demo"
+
+
+def test_post_video_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_video_post(self, *, text, visibility, media_path, title):
+            assert text == "hello video"
+            assert visibility == "public"
+            assert media_path == "clip.mp4"
+            assert title == "Demo"
+            return PublishResult(
+                post_id="urn:li:share:video",
+                url="https://www.linkedin.com/feed/update/urn:li:share:video/",
+                created_at="2026-06-15T00:00:00Z",
+                visibility="public",
+                raw={"status_code": 201, "request": {"media": {"video": "urn:li:video:abc"}}},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "video",
+            "--text",
+            "hello video",
+            "--video",
+            "clip.mp4",
+            "--title",
+            "Demo",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.video"
+    assert payload["data"]["post"]["id"] == "urn:li:share:video"
+
+
 def test_post_article_dry_run_json_contract_output() -> None:
     runner = CliRunner()
 

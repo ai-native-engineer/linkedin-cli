@@ -10,10 +10,15 @@ from . import __version__
 from .models import Post
 from .models import Profile
 from .models import SearchResult
+from .publisher import CommentListResult
+from .publisher import CommentResult
 from .publisher import DeleteResult
 from .publisher import GetPostResult
 from .publisher import ListPostsResult
 from .publisher import PublishResult
+from .publisher import ReactionResult
+from .publisher import SocialActionResult
+from .publisher import SocialMetadataResult
 from .publisher import UpdateResult
 from .serialization import to_dict
 
@@ -333,6 +338,87 @@ def post_list_success_data(result: ListPostsResult) -> dict[str, Any]:
         ],
         "paging": result.paging,
         "raw": result.raw,
+    }
+
+
+def comment_success_data(result: CommentResult) -> dict[str, Any]:
+    """Build success data for official comment get/create."""
+    return {
+        "comment": {
+            "id": result.comment_id,
+            "entity": result.entity_urn,
+            "source": "official",
+            "raw": _redact_secrets(result.raw),
+        }
+    }
+
+
+def comment_list_success_data(result: CommentListResult) -> dict[str, Any]:
+    """Build success data for official comment list."""
+    return {
+        "comments": [
+            {
+                "id": item.get("id"),
+                "source": "official",
+                "raw": _redact_secrets(item),
+            }
+            for item in result.elements
+        ],
+        "paging": result.paging,
+        "raw": _redact_secrets(result.raw),
+    }
+
+
+def reaction_success_data(result: ReactionResult) -> dict[str, Any]:
+    """Build success data for official reaction get/create."""
+    return {
+        "reaction": {
+            "actor": result.actor_urn,
+            "entity": result.entity_urn,
+            "source": "official",
+            "raw": _redact_secrets(result.raw),
+        }
+    }
+
+
+def reaction_list_success_data(result: CommentListResult) -> dict[str, Any]:
+    """Build success data for official reaction list."""
+    return {
+        "reactions": [
+            {
+                "id": item.get("id"),
+                "source": "official",
+                "raw": _redact_secrets(item),
+            }
+            for item in result.elements
+        ],
+        "paging": result.paging,
+        "raw": _redact_secrets(result.raw),
+    }
+
+
+def social_metadata_success_data(result: SocialMetadataResult) -> dict[str, Any]:
+    """Build success data for official social metadata."""
+    return {
+        "social_metadata": {
+            "entity": result.entity_urn,
+            "source": "official",
+            "raw": _redact_secrets(result.raw),
+        }
+    }
+
+
+def social_action_success_data(result: SocialActionResult) -> dict[str, Any]:
+    """Build success data for official social actions without a resource body."""
+    return {
+        "action": result.action,
+        "target": {
+            "id": result.entity_urn,
+        },
+        "result": {
+            "completed_at": result.completed_at,
+            "raw": _redact_secrets(result.raw),
+        },
     }
 
 

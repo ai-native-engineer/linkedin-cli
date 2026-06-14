@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from linkedin_cli.api import DRY_RUN_IMAGE_URN
+from linkedin_cli.api import DRY_RUN_VIDEO_URN
 from linkedin_cli.api import LinkedInWriteAPI
 from linkedin_cli.oauth import OAuthConfig
 from linkedin_cli.publisher import DeleteResult
@@ -17,6 +18,8 @@ class FakePublisher:
     def __init__(self) -> None:
         self.text_calls = []
         self.image_calls = []
+        self.multi_image_calls = []
+        self.video_calls = []
         self.delete_calls = []
         self.article_calls = []
         self.reshare_calls = []
@@ -33,6 +36,19 @@ class FakePublisher:
     def build_media_payload(self, *, text, visibility, image_urn):
         payload = self.build_text_payload(text=text, visibility=visibility)
         payload["content"] = {"media": {"id": image_urn}}
+        return payload
+
+    def build_multi_image_payload(self, *, text, visibility, images):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        payload["content"] = {"multiImage": {"images": images}}
+        return payload
+
+    def build_video_payload(self, *, text, visibility, video_urn, title=None):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        media = {"id": video_urn}
+        if title:
+            media["title"] = title
+        payload["content"] = {"media": media}
         return payload
 
     def build_article_payload(self, *, text, visibility, url, title=None, description=None, thumbnail=None):
@@ -65,6 +81,40 @@ class FakePublisher:
         return PublishResult(
             post_id="urn:li:share:456",
             url="https://www.linkedin.com/feed/update/urn:li:share:456/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def post_multi_image(self, *, text, visibility, media_paths, alt_texts=()):
+        self.multi_image_calls.append(
+            {
+                "text": text,
+                "visibility": visibility,
+                "media_paths": media_paths,
+                "alt_texts": alt_texts,
+            }
+        )
+        return PublishResult(
+            post_id="urn:li:share:multi",
+            url="https://www.linkedin.com/feed/update/urn:li:share:multi/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def post_video(self, *, text, visibility, media_path, title=None):
+        self.video_calls.append(
+            {
+                "text": text,
+                "visibility": visibility,
+                "media_path": media_path,
+                "title": title,
+            }
+        )
+        return PublishResult(
+            post_id="urn:li:share:video",
+            url="https://www.linkedin.com/feed/update/urn:li:share:video/",
             created_at="2026-06-15T00:00:00Z",
             visibility=visibility,
             raw={},
@@ -191,6 +241,92 @@ def test_create_image_post_delegates_to_publisher() -> None:
     assert result.post_id == "urn:li:share:456"
     assert fake.image_calls == [
         {"text": "hello", "visibility": "public", "media_path": Path("image.png")}
+    ]
+
+
+def test_plan_multi_image_post_uses_dry_run_image_placeholders() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_multi_image_post(
+        text=" hello images ",
+        media_paths=["one.png", "two.jpg"],
+        alt_texts=("one", "two"),
+        visibility="public",
+    )
+
+    assert plan.command == "post.multi_image"
+    assert plan.api == "linkedin.posts+images"
+    assert plan.text_length == 12
+    assert plan.media_count == 2
+    assert plan.payload["content"]["multiImage"]["images"] == [
+        {"id": "urn:li:image:DRY_RUN_1", "altText": "one"},
+        {"id": "urn:li:image:DRY_RUN_2", "altText": "two"},
+    ]
+    assert plan.media_paths == (str(Path("one.png").expanduser()), str(Path("two.jpg").expanduser()))
+
+
+def test_create_multi_image_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.create_multi_image_post(
+        text="hello",
+        media_paths=["one.png", "two.jpg"],
+        alt_texts=("one", "two"),
+        visibility="public",
+    )
+
+    assert result.post_id == "urn:li:share:multi"
+    assert fake.multi_image_calls == [
+        {
+            "text": "hello",
+            "visibility": "public",
+            "media_paths": [Path("one.png"), Path("two.jpg")],
+            "alt_texts": ("one", "two"),
+        }
+    ]
+
+
+def test_plan_video_post_uses_dry_run_video_placeholder() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_video_post(
+        text=" hello video ",
+        media_path="clip.mp4",
+        visibility="public",
+        title="Demo",
+    )
+
+    assert plan.command == "post.video"
+    assert plan.api == "linkedin.posts+videos"
+    assert plan.text_length == 11
+    assert plan.media_count == 1
+    assert plan.payload["content"]["media"] == {
+        "id": DRY_RUN_VIDEO_URN,
+        "title": "Demo",
+    }
+    assert plan.media_paths == (str(Path("clip.mp4").expanduser()),)
+
+
+def test_create_video_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.create_video_post(
+        text="hello",
+        media_path="clip.mp4",
+        visibility="public",
+        title="Demo",
+    )
+
+    assert result.post_id == "urn:li:share:video"
+    assert fake.video_calls == [
+        {
+            "text": "hello",
+            "visibility": "public",
+            "media_path": Path("clip.mp4"),
+            "title": "Demo",
+        }
     ]
 
 

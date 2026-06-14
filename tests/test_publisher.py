@@ -8,14 +8,27 @@ from linkedin_cli.publisher import IMAGES_INITIALIZE_URL
 from linkedin_cli.publisher import LinkedInPublishError
 from linkedin_cli.publisher import LinkedInPublisher
 from linkedin_cli.publisher import POSTS_URL
+from linkedin_cli.publisher import REACTIONS_URL
 from linkedin_cli.publisher import REST_POSTS_URL
+from linkedin_cli.publisher import SOCIAL_ACTIONS_URL
+from linkedin_cli.publisher import SOCIAL_METADATA_URL
+from linkedin_cli.publisher import VIDEOS_FINALIZE_URL
+from linkedin_cli.publisher import VIDEOS_INITIALIZE_URL
+from linkedin_cli.publisher import normalize_reaction_type
+from linkedin_cli.publisher import normalize_social_entity_id
 from linkedin_cli.publisher import normalize_delete_post_id
 
 
 class FakeClient:
-    def __init__(self, *post_responses: httpx.Response, put_response: httpx.Response | None = None) -> None:
+    def __init__(
+        self,
+        *post_responses: httpx.Response,
+        put_response: httpx.Response | None = None,
+        put_responses: list[httpx.Response] | None = None,
+    ) -> None:
         self.post_responses = list(post_responses)
         self.put_response = put_response or httpx.Response(201)
+        self.put_responses = list(put_responses or [])
         self.calls = []
         self.delete_calls = []
         self.get_calls = []
@@ -27,6 +40,8 @@ class FakeClient:
 
     def put(self, url, *, content, headers):
         self.put_calls.append({"url": url, "content": content, "headers": headers})
+        if self.put_responses:
+            return self.put_responses.pop(0)
         return self.put_response
 
     def delete(self, url, *, headers):
@@ -116,6 +131,153 @@ def test_post_image_success(tmp_path) -> None:
     assert client.calls[1]["json"]["content"]["media"]["id"] == "urn:li:image:abc"
 
 
+def test_post_multi_image_success(tmp_path) -> None:
+    first_path = tmp_path / "one.png"
+    second_path = tmp_path / "two.jpg"
+    first_path.write_bytes(b"one")
+    second_path.write_bytes(b"two")
+    first_init_response = httpx.Response(
+        200,
+        json={
+            "value": {
+                "uploadUrl": "https://upload.example.test/one",
+                "image": "urn:li:image:one",
+            }
+        },
+    )
+    second_init_response = httpx.Response(
+        200,
+        json={
+            "value": {
+                "uploadUrl": "https://upload.example.test/two",
+                "image": "urn:li:image:two",
+            }
+        },
+    )
+    post_response = httpx.Response(201, headers={"x-restli-id": "urn:li:share:multi"})
+    client = FakeClient(first_init_response, second_init_response, post_response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.post_multi_image(
+        text="hello images",
+        visibility="public",
+        media_paths=[first_path, second_path],
+        alt_texts=("one alt", "two alt"),
+    )
+
+    assert result.post_id == "urn:li:share:multi"
+    assert client.calls[0]["url"] == IMAGES_INITIALIZE_URL
+    assert client.calls[1]["url"] == IMAGES_INITIALIZE_URL
+    assert client.put_calls[0]["content"] == b"one"
+    assert client.put_calls[1]["content"] == b"two"
+    assert client.calls[2]["url"] == POSTS_URL
+    assert client.calls[2]["json"]["content"]["multiImage"]["images"] == [
+        {"id": "urn:li:image:one", "altText": "one alt"},
+        {"id": "urn:li:image:two", "altText": "two alt"},
+    ]
+    assert result.raw["request"]["media"] == {
+        "multiImage": [
+            {"id": "urn:li:image:one", "altText": "one alt"},
+            {"id": "urn:li:image:two", "altText": "two alt"},
+        ]
+    }
+
+
+def test_build_multi_image_payload_rejects_single_image() -> None:
+    publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
+
+    with pytest.raises(LinkedInPublishError) as error:
+        publisher.build_multi_image_payload(
+            text="hello",
+            visibility="public",
+            images=[{"id": "urn:li:image:one"}],
+        )
+
+    assert error.value.code == "media_invalid"
+    assert error.value.details["min_media_count"] == 2
+
+
+def test_build_video_payload() -> None:
+    publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
+
+    payload = publisher.build_video_payload(
+        text=" video ",
+        visibility="public",
+        video_urn="urn:li:video:abc",
+        title="Demo",
+    )
+
+    assert payload["commentary"] == "video"
+    assert payload["content"]["media"] == {
+        "id": "urn:li:video:abc",
+        "title": "Demo",
+    }
+
+
+def test_post_video_success(tmp_path) -> None:
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"0123456789")
+    init_response = httpx.Response(
+        200,
+        json={
+            "value": {
+                "video": "urn:li:video:abc",
+                "uploadToken": "token-456",
+                "uploadInstructions": [
+                    {
+                        "uploadUrl": "https://upload.example.test/video/part-1",
+                        "firstByte": 0,
+                        "lastByte": 4,
+                    },
+                    {
+                        "uploadUrl": "https://upload.example.test/video/part-2",
+                        "firstByte": 5,
+                        "lastByte": 9,
+                    },
+                ],
+            }
+        },
+    )
+    finalize_response = httpx.Response(200, json={"value": {"status": "AVAILABLE"}})
+    post_response = httpx.Response(201, headers={"x-restli-id": "urn:li:share:video"})
+    client = FakeClient(
+        init_response,
+        finalize_response,
+        post_response,
+        put_responses=[
+            httpx.Response(200, headers={"ETag": '"part-one"'}),
+            httpx.Response(200, headers={"ETag": "part-two"}),
+        ],
+    )
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.post_video(
+        text="hello video",
+        visibility="public",
+        media_path=video_path,
+        title="Demo video",
+    )
+
+    assert result.post_id == "urn:li:share:video"
+    assert client.calls[0]["url"] == VIDEOS_INITIALIZE_URL
+    assert client.calls[0]["json"]["initializeUploadRequest"]["fileSizeBytes"] == 10
+    assert client.put_calls[0]["content"] == b"01234"
+    assert client.put_calls[1]["content"] == b"56789"
+    assert client.put_calls[0]["headers"]["Content-Type"] == "application/octet-stream"
+    assert client.calls[1]["url"] == VIDEOS_FINALIZE_URL
+    assert client.calls[1]["json"]["finalizeUploadRequest"] == {
+        "video": "urn:li:video:abc",
+        "uploadToken": "token-456",
+        "uploadedPartIds": ["part-one", "part-two"],
+    }
+    assert client.calls[2]["url"] == POSTS_URL
+    assert client.calls[2]["json"]["content"]["media"] == {
+        "id": "urn:li:video:abc",
+        "title": "Demo video",
+    }
+    assert result.raw["request"]["media"] == {"video": "urn:li:video:abc"}
+
+
 def test_build_article_payload() -> None:
     publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
 
@@ -187,6 +349,159 @@ def test_list_posts_by_author_success() -> None:
     assert client.get_calls[0]["headers"]["X-RestLi-Method"] == "FINDER"
 
 
+def test_create_comment_success() -> None:
+    response = httpx.Response(201, json={"id": "comment-1", "message": {"text": "hello"}})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.create_comment(entity="urn:li:ugcPost:123", text=" hello ")
+
+    assert result.comment_id == "comment-1"
+    assert result.entity_urn == "urn:li:ugcPost:123"
+    assert client.calls[0]["url"] == f"{SOCIAL_ACTIONS_URL}/urn%3Ali%3AugcPost%3A123/comments"
+    assert client.calls[0]["json"] == {
+        "actor": "urn:li:person:abc",
+        "object": "urn:li:ugcPost:123",
+        "message": {"text": "hello"},
+    }
+
+
+def test_list_comments_success() -> None:
+    response = httpx.Response(
+        200,
+        json={"elements": [{"id": "comment-1"}], "paging": {"count": 1, "start": 0}},
+    )
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.list_comments(entity="urn:li:ugcPost:123", count=1, start=0)
+
+    assert result.elements == [{"id": "comment-1"}]
+    assert client.get_calls[0]["url"] == (
+        f"{SOCIAL_ACTIONS_URL}/urn%3Ali%3AugcPost%3A123/comments?count=1&start=0"
+    )
+
+
+def test_get_comment_success() -> None:
+    response = httpx.Response(200, json={"id": "comment-1"})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.get_comment(entity="urn:li:ugcPost:123", comment_id="comment-1")
+
+    assert result.comment_id == "comment-1"
+    assert client.get_calls[0]["url"] == (
+        f"{SOCIAL_ACTIONS_URL}/urn%3Ali%3AugcPost%3A123/comments/comment-1"
+    )
+
+
+def test_update_comment_success() -> None:
+    response = httpx.Response(204)
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.update_comment(
+        entity="urn:li:ugcPost:123",
+        comment_id="comment-1",
+        text=" updated ",
+    )
+
+    assert result.action == "comment.update"
+    assert client.calls[0]["url"] == (
+        f"{SOCIAL_ACTIONS_URL}/urn%3Ali%3AugcPost%3A123/comments/comment-1?"
+        "actor=urn%3Ali%3Aperson%3Aabc"
+    )
+    assert client.calls[0]["headers"]["X-RestLi-Method"] == "PARTIAL_UPDATE"
+    assert client.calls[0]["json"] == {
+        "patch": {"message": {"$set": {"text": "updated"}}}
+    }
+
+
+def test_create_reaction_success() -> None:
+    response = httpx.Response(201, json={"id": "reaction-1", "reactionType": "PRAISE"})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.create_reaction(entity="urn:li:ugcPost:123", reaction_type="celebrate")
+
+    assert result.raw["reactionType"] == "PRAISE"
+    assert client.calls[0]["url"] == f"{REACTIONS_URL}?actor=urn%3Ali%3Aperson%3Aabc"
+    assert client.calls[0]["json"] == {
+        "root": "urn:li:ugcPost:123",
+        "reactionType": "PRAISE",
+    }
+
+
+def test_list_reactions_success() -> None:
+    response = httpx.Response(
+        200,
+        json={"elements": [{"id": "reaction-1"}], "paging": {"count": 1, "start": 0}},
+    )
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.list_reactions(entity="urn:li:ugcPost:123", count=1, start=0)
+
+    assert result.elements == [{"id": "reaction-1"}]
+    assert client.get_calls[0]["url"].startswith(
+        f"{REACTIONS_URL}/(entity:urn%3Ali%3AugcPost%3A123)?"
+    )
+    assert "q=entity" in client.get_calls[0]["url"]
+
+
+def test_get_reaction_success() -> None:
+    response = httpx.Response(200, json={"reactionType": "LIKE"})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.get_reaction(entity="urn:li:ugcPost:123")
+
+    assert result.raw["reactionType"] == "LIKE"
+    assert client.get_calls[0]["url"] == (
+        f"{REACTIONS_URL}/"
+        "(actor:urn%3Ali%3Aperson%3Aabc,entity:urn%3Ali%3AugcPost%3A123)"
+    )
+
+
+def test_delete_reaction_success() -> None:
+    client = FakeClient(httpx.Response(204))
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.delete_reaction(entity="urn:li:ugcPost:123")
+
+    assert result.action == "reaction.delete"
+    assert client.delete_calls[0]["url"] == (
+        f"{REACTIONS_URL}/"
+        "(actor:urn%3Ali%3Aperson%3Aabc,entity:urn%3Ali%3AugcPost%3A123)"
+    )
+
+
+def test_get_social_metadata_success() -> None:
+    response = httpx.Response(200, json={"entity": "urn:li:ugcPost:123", "commentsState": "OPEN"})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.get_social_metadata(entity="urn:li:ugcPost:123")
+
+    assert result.raw["commentsState"] == "OPEN"
+    assert client.get_calls[0]["url"] == f"{SOCIAL_METADATA_URL}/urn%3Ali%3AugcPost%3A123"
+
+
+def test_update_comments_state_success() -> None:
+    client = FakeClient(httpx.Response(202))
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.update_comments_state(entity="urn:li:ugcPost:123", state="closed")
+
+    assert result.entity_urn == "urn:li:ugcPost:123"
+    assert client.calls[0]["url"] == (
+        f"{SOCIAL_METADATA_URL}/urn%3Ali%3AugcPost%3A123?"
+        "actor=urn%3Ali%3Aperson%3Aabc"
+    )
+    assert client.calls[0]["headers"]["X-RestLi-Method"] == "PARTIAL_UPDATE"
+    assert client.calls[0]["json"] == {"patch": {"$set": {"commentsState": "CLOSED"}}}
+
+
 def test_delete_post_success() -> None:
     client = FakeClient(httpx.Response(204))
     publisher = LinkedInPublisher(_oauth(), client=client)
@@ -239,6 +554,21 @@ def test_normalize_delete_post_id_rejects_activity_urn() -> None:
         normalize_delete_post_id("urn:li:activity:123")
 
     assert error.value.code == "invalid_request"
+
+
+def test_normalize_social_entity_id_accepts_feed_update_url() -> None:
+    assert (
+        normalize_social_entity_id(
+            "https://www.linkedin.com/feed/update/urn%3Ali%3AugcPost%3A123/"
+        )
+        == "urn:li:ugcPost:123"
+    )
+
+
+def test_normalize_reaction_type_maps_ui_names() -> None:
+    assert normalize_reaction_type("celebrate") == "PRAISE"
+    assert normalize_reaction_type("support") == "APPRECIATION"
+    assert normalize_reaction_type("funny") == "ENTERTAINMENT"
 
 
 def test_post_image_rejects_unsupported_file_type(tmp_path) -> None:
