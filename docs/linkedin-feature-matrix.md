@@ -17,6 +17,7 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 | Feature | Target command | Status | Notes |
 |---|---|---:|---|
 | OAuth token issue | `auth oauth-login` | implemented | Saves `~/.config/linkedin/oauth.json`. |
+| OAuth permission check | `auth permission-check` | implemented | Safe GET-only probes for userinfo, post list, and optional post-scoped social APIs. See `docs/permission-evidence.md`. |
 | Text post create | `post text` | implemented | Uses `/rest/posts`. |
 | Image post create | `post media` | implemented | One local image; uses `/rest/images` + `/rest/posts`. |
 | Post delete | `post delete` | implemented | Uses `/rest/posts/{encodedUrn}`. |
@@ -27,8 +28,8 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 | Reshare | `post reshare` | implemented | Reshare an existing post with commentary. |
 | Multi-image post | `post multi-image` | implemented | 2-20 local images; uses `/rest/images` + `/rest/posts`. |
 | Video post | `post video` | implemented | Local MP4; uses `/rest/videos` + `/rest/posts`. |
-| Document post | `post document` | next | Needs document asset upload flow. |
-| Poll post | `post poll` | next | Needs poll payload validation. |
+| Document post | `post document` | implemented | Local PDF/DOC/DOCX/PPT/PPTX; uses `/rest/documents` + `/rest/posts`. |
+| Poll post | `post poll` | implemented | Non-sponsored poll with 2-4 options and official duration validation. |
 | Organization author | `--author urn:li:organization:*` | partial | OAuth and app permission dependent. |
 
 ## Official Community APIs
@@ -39,7 +40,7 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 | Comment get | `comment get` | implemented | Official Comments API; permission dependent. |
 | Comment create | `comment create` | implemented | Official Comments API; prefers official over browser fallback. |
 | Comment update | `comment update` | implemented | Official Comments API; permission dependent. |
-| Comment delete | `comment delete` | next | Needs endpoint confirmation before adding. |
+| Comment delete | `comment delete` | implemented | Official Comments API delete with actor parameter. |
 | Reaction list | `reaction list` | implemented | Official Reactions API; permission dependent. |
 | Reaction get | `reaction get` | implemented | Official Reactions API; permission dependent. |
 | Reaction create | `reaction create` | implemented | Official Reactions API; prefers official over legacy `react`. |
@@ -51,14 +52,14 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 | Feature | Target command | Status | Notes |
 |---|---|---:|---|
-| Home feed | `read feed` | implemented | Unofficial web session. |
-| Saved posts | `read saved` | implemented | Unofficial web session; pagination can improve. |
+| Home feed | `read feed` | implemented | Unofficial web session; contract-level offset cursor. |
+| Saved posts | `read saved` | implemented | Unofficial web session; contract-level offset cursor. |
 | Profile | `read profile` | implemented | Unofficial web session. |
-| Search | `read search` | implemented | Unofficial web session. |
+| Search | `read search` | implemented | Unofficial web session; contract-level offset cursor. |
 | Activity detail | `read activity` | implemented | Canonical JSON wrapper over unofficial activity read. |
-| Profile posts | `read profile-posts` | implemented | Canonical JSON wrapper over unofficial profile post read. |
-| Comments read | `read comments` | next | Unofficial fallback if official permission is unavailable. |
-| Reactions read | `read reactions` | next | Unofficial fallback if official permission is unavailable. |
+| Profile posts | `read profile-posts` | implemented | Canonical JSON wrapper over unofficial profile post read; contract-level offset cursor. |
+| Comments read | `read comments` | implemented | Unofficial fallback if official permission is unavailable; activity URN required; contract-level offset cursor. |
+| Reactions read | `read reactions` | implemented | Unofficial fallback if official permission is unavailable; activity URN required; contract-level offset cursor. |
 | Notifications | `read notifications` | restricted | Higher product/ToS risk; implement only if clearly personal and low-volume. |
 
 ## Explicit Non-Goals
@@ -74,16 +75,16 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 ## Implementation Order
 
-1. Confirm and add official comment deletion if supported for the current API version.
-2. Add document and poll publishing.
-3. Harden pagination for unofficial saved/profile-posts reads.
-4. Add live permission matrix evidence for `w_member_social_feed` / `r_member_social_feed`.
+1. Run `auth permission-check --post-id <known-post>` whenever app scopes change and record the current account's evidence.
+2. If LinkedIn exposes stable server cursors for unofficial reads, replace the current contract-level offset cursor with source-native cursors.
 
 Official references:
 
 - LinkedIn Posts API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
 - LinkedIn MultiImage Post API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/multiimage-post-api
 - LinkedIn Videos API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api
+- LinkedIn Documents API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/documents-api
+- LinkedIn Poll API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/poll-post-api
 - LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
 - LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
 - LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api

@@ -18,7 +18,7 @@
 - `read.*`: 본인 LinkedIn 웹 세션을 사용하는 비공식 읽기 워크플로우
 - `post.*`: LinkedIn OAuth와 공식 LinkedIn API를 사용하는 공식 쓰기 워크플로우
 
-태그: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`
+태그: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`, `oauth`, `comments`, `reactions`, `media`
 
 > 이 프로젝트는 LinkedIn과 무관합니다. 읽기 명령은 비공식 웹 동작에 의존하며, LinkedIn 내부 엔드포인트가 바뀌면 깨질 수 있습니다. 계정에 적용되는 약관은 사용자가 직접 검토해야 합니다.
 
@@ -32,6 +32,8 @@
 - 사람/게시글 검색
 - 특정 프로필의 게시글 조회
 - 단일 activity 조회
+- 활동 댓글 읽기
+- 활동 반응 읽기
 - 에이전트, 스크립트, SNS CLI ecosystem 소비용 `sns-json-v1` JSON 출력
 
 쓰기:
@@ -93,6 +95,13 @@ export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; bcookie="..."; 
 linkedin-cli auth-status
 ```
 
+공식 OAuth 권한을 mutation 없이 점검:
+
+```bash
+linkedin-cli auth permission-check --json
+linkedin-cli auth permission-check --post-id urn:li:ugcPost:1234567890 --json
+```
+
 읽기 명령 실행:
 
 ```bash
@@ -101,6 +110,8 @@ linkedin-cli read saved --limit 10 --json
 linkedin-cli read profile seungwon-aiden --json
 linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
+linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
+linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "AI engineer" --limit 10 --json
 ```
 
@@ -337,6 +348,8 @@ linkedin-cli read saved --limit 20 --json
 linkedin-cli read profile seungwon-aiden --json
 linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
+linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
+linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "product manager" --limit 10 --json
 
 linkedin-cli saved list --limit 20 --json
@@ -375,6 +388,7 @@ linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
 Legacy 호환 명령:
 
 ```bash
+linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
 linkedin-cli profile seungwon-aiden --json
 linkedin-cli profile-posts seungwon-aiden --max 20
@@ -434,13 +448,15 @@ print(delete_result.deleted_at)
 
 ## Skills와 Plugin
 
-이 repo는 세 개의 project-local skill을 포함합니다. 원본은 [`.agents/skills/`](./.agents/skills)에 있고 `skills/`와 `.claude/skills/`는 심볼릭 링크입니다.
+이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`와 `.claude/skills/`는 이 skill로 연결된 심볼릭 링크입니다.
 
-- [`linkedin-cli`](./.agents/skills/linkedin-cli) — 셋업, 인증, 읽기 워크플로, 명령 선택
-- [`linkedin-cli-auth`](./.agents/skills/linkedin-cli-auth) — 세션·쿠키·OAuth 진단
-- [`linkedin-cli-write`](./.agents/skills/linkedin-cli-write) — 게시와 안전한 변경
+- [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
+- [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — 첫 셋업과 OAuth/쿠키 인증
+- [command-cookbook.md](./.agents/skills/linkedin-cli/references/command-cookbook.md) — 정확한 명령 패턴과 JSON 사용
+- [auth-troubleshooting.md](./.agents/skills/linkedin-cli/references/auth-troubleshooting.md) — 세션 복구와 진단
+- [write-workflows.md](./.agents/skills/linkedin-cli/references/write-workflows.md) — 공식 발행과 안전한 mutation
 
-Claude 플러그인으로도 배포됩니다 ([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json), [`marketplace.json`](./.claude-plugin/marketplace.json)).
+Claude 플러그인 메타데이터는 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)에 있습니다.
 
 ## 개발
 

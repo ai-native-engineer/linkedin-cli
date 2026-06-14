@@ -96,6 +96,50 @@ def test_react_requires_activity_urn() -> None:
         raise AssertionError("Expected LinkedInClientError for a non-activity URN")
 
 
+def test_get_comments_fetches_unofficial_activity_comments(monkeypatch) -> None:
+    client = object.__new__(LinkedInClient)
+    client.config = load_config()
+
+    class FakeAPI:
+        def get_post_comments(self, activity_id, comment_count):
+            assert activity_id == "123"
+            assert comment_count == 2
+            return [
+                {
+                    "entityUrn": "urn:li:comment:1",
+                    "commentary": {"text": "Nice post"},
+                    "commenter": {"name": "Commenter", "publicIdentifier": "commenter"},
+                }
+            ]
+
+    client.api = FakeAPI()
+    monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
+
+    comments = client.get_comments("urn:li:activity:123", limit=2)
+
+    assert comments[0].urn == "urn:li:comment:1"
+    assert comments[0].text == "Nice post"
+    assert comments[0].post_urn == "urn:li:activity:123"
+
+
+def test_get_reactions_fetches_unofficial_activity_reactions(monkeypatch) -> None:
+    client = object.__new__(LinkedInClient)
+    client.config = load_config()
+
+    class FakeAPI:
+        def get_post_reactions(self, activity_urn, max_results):
+            assert activity_urn == "urn:li:activity:123"
+            assert max_results == 2
+            return [{"reactionType": "LIKE"}, "bad"]
+
+    client.api = FakeAPI()
+    monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
+
+    reactions = client.get_reactions("urn:li:activity:123", limit=2)
+
+    assert reactions == [{"reactionType": "LIKE"}]
+
+
 def test_profile_summary_does_not_fall_back_to_headline() -> None:
     client = object.__new__(LinkedInClient)
 

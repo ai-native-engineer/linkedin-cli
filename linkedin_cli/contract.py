@@ -7,6 +7,7 @@ import json
 from typing import Any, Iterable, Optional
 
 from . import __version__
+from .models import Comment
 from .models import Post
 from .models import Profile
 from .models import SearchResult
@@ -173,6 +174,88 @@ def search_result_to_contract(result: SearchResult) -> dict[str, Any]:
         "snippet": _empty_to_none(result.snippet),
         "source": "unofficial",
         "raw": _redact_secrets(to_dict(result)),
+    }
+
+
+def comments_data(
+    comments: Iterable[Comment],
+    *,
+    cursor: Optional[str] = None,
+    next_cursor: Optional[str] = None,
+    has_more: bool = False,
+) -> dict[str, Any]:
+    """Build `read.comments` data."""
+    return {
+        "comments": [comment_to_contract(item, source="unofficial") for item in comments],
+        "paging": {
+            "cursor": cursor,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        },
+    }
+
+
+def comment_to_contract(comment: Comment, *, source: str) -> dict[str, Any]:
+    """Convert the internal Comment model to the SNS JSON Contract comment shape."""
+    raw = _redact_secrets(to_dict(comment))
+    return {
+        "id": _empty_to_none(comment.urn),
+        "post_id": _empty_to_none(comment.post_urn),
+        "author": {
+            "id": _empty_to_none(comment.author.urn),
+            "name": _empty_to_none(comment.author.name),
+            "handle": _empty_to_none(comment.author.public_id),
+            "url": _empty_to_none(comment.author.profile_url),
+            "avatar_url": _empty_to_none(comment.author.avatar_url),
+        },
+        "text": _empty_to_none(comment.text),
+        "created_at": _coerce_utc_timestamp(comment.created_at),
+        "edited_at": _coerce_utc_timestamp(comment.edited_at),
+        "metrics": {
+            "likes": _coerce_metric(comment.reactions.total or None),
+            "replies": _coerce_metric(comment.replies_count),
+        },
+        "source": source,
+        "raw": raw,
+    }
+
+
+def reactions_data(
+    reactions: Iterable[dict[str, Any]],
+    *,
+    cursor: Optional[str] = None,
+    next_cursor: Optional[str] = None,
+    has_more: bool = False,
+) -> dict[str, Any]:
+    """Build `read.reactions` data."""
+    return {
+        "reactions": [reaction_to_contract(item, source="unofficial") for item in reactions],
+        "paging": {
+            "cursor": cursor,
+            "next_cursor": next_cursor,
+            "has_more": has_more,
+        },
+    }
+
+
+def reaction_to_contract(reaction: dict[str, Any], *, source: str) -> dict[str, Any]:
+    """Convert an unofficial raw reaction payload to a stable contract shape."""
+    raw = _redact_secrets(reaction)
+    actor = reaction.get("actor")
+    if not isinstance(actor, dict):
+        actor = {}
+    return {
+        "type": _empty_to_none(_reaction_type(raw)),
+        "actor": {
+            "id": _empty_to_none(
+                _first_present_value(raw, "actor.entityUrn", "actorUrn", "*actor")
+            ),
+            "name": _empty_to_none(_first_present_value(actor, "name.text", "name")),
+            "handle": _empty_to_none(_first_present_value(actor, "publicIdentifier", "public_id")),
+            "url": _empty_to_none(_first_present_value(actor, "navigationUrl", "url")),
+        },
+        "source": source,
+        "raw": raw,
     }
 
 
@@ -485,6 +568,23 @@ def auth_status_data(
     }
 
 
+def permission_check_data(
+    *,
+    oauth: dict[str, Any],
+    probes: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build `auth.permission_check` data without exposing OAuth secrets."""
+    return {
+        "oauth": oauth,
+        "probes": probes,
+        "summary": {
+            "ok": all(item.get("ok") for item in probes),
+            "passed": sum(1 for item in probes if item.get("ok")),
+            "failed": sum(1 for item in probes if not item.get("ok")),
+        },
+    }
+
+
 _SECRET_RAW_KEYS = frozenset(
     {
         "liat",
@@ -538,6 +638,24 @@ def _coerce_metric(value: Any, *, unknown_zero: bool = False) -> Optional[int]:
     if metric == 0 and unknown_zero:
         return None
     return metric
+
+
+def _first_present_value(payload: dict[str, Any], *paths: str) -> Any:
+    for path in paths:
+        value: Any = payload
+        for part in path.split("."):
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(part)
+        if value not in (None, "", [], {}):
+            return value
+    return None
+
+
+def _reaction_type(payload: dict[str, Any]) -> str:
+    value = _first_present_value(payload, "reactionType", "reaction_type", "type")
+    return str(value or "").lower()
 
 
 def _coerce_utc_timestamp(value: Any) -> Optional[str]:

@@ -8,9 +8,12 @@ from click.testing import CliRunner
 from linkedin_cli.auth import AuthenticationError
 from linkedin_cli.cli import cli
 from linkedin_cli.models import Actor
+from linkedin_cli.models import Comment
 from linkedin_cli.models import Post
 from linkedin_cli.models import Profile
+from linkedin_cli.models import ReactionSummary
 from linkedin_cli.models import SearchResult
+from linkedin_cli.oauth import OAuthConfig
 from linkedin_cli.oauth_flow import OAuthLoginResult
 from linkedin_cli.publisher import CommentListResult
 from linkedin_cli.publisher import CommentResult
@@ -80,6 +83,31 @@ class FakeClient:
     def get_activity(self, identifier):
         return self.feed()[0]
 
+    def get_comments(self, identifier, limit=None):
+        return [
+            Comment(
+                urn="urn:li:comment:1",
+                post_urn=identifier,
+                author=Actor(name="Commenter", public_id="commenter"),
+                text="Nice post",
+                reactions=ReactionSummary(like=2),
+                replies_count=1,
+            )
+        ]
+
+    def get_reactions(self, identifier, limit=None):
+        return [
+            {
+                "reactionType": "LIKE",
+                "actor": {
+                    "entityUrn": "urn:li:person:abc",
+                    "name": {"text": "Jane Doe"},
+                    "publicIdentifier": "jane-doe",
+                    "navigationUrl": "https://www.linkedin.com/in/jane-doe/",
+                },
+            }
+        ]
+
     def post(self, text, visibility="connections"):
         return f"posted {visibility}: {text}"
 
@@ -138,6 +166,48 @@ def test_read_feed_json_contract_output(monkeypatch) -> None:
         "next_cursor": None,
         "has_more": False,
     }
+
+
+def test_read_feed_cursor_paginates_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class PaginationClient(FakeClient):
+        def feed(self, limit=None):
+            posts = [
+                Post(urn=f"urn:li:activity:{index}", author=Actor(name="Jane Doe"), text=f"Post {index}")
+                for index in range(1, 5)
+            ]
+            return posts[: limit or len(posts)]
+
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: PaginationClient())
+
+    first = runner.invoke(cli, ["read", "feed", "--limit", "2", "--json"])
+    first_payload = json.loads(first.output)
+    cursor = first_payload["data"]["paging"]["next_cursor"]
+    second = runner.invoke(cli, ["read", "feed", "--limit", "2", "--cursor", cursor, "--json"])
+    second_payload = json.loads(second.output)
+
+    assert first.exit_code == 0
+    assert first_payload["data"]["posts"][0]["id"] == "urn:li:activity:1"
+    assert first_payload["data"]["paging"]["has_more"] is True
+    assert cursor
+    assert second.exit_code == 0
+    assert second_payload["request"]["cursor"] == cursor
+    assert second_payload["data"]["posts"][0]["id"] == "urn:li:activity:3"
+    assert second_payload["data"]["paging"]["has_more"] is False
+
+
+def test_read_feed_invalid_cursor_json_contract(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["read", "feed", "--limit", "2", "--cursor", "not-a-cursor", "--json"])
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["command"] == "read.feed"
+    assert payload["error"]["code"] == "invalid_request"
 
 
 def test_read_saved_json_contract_output(monkeypatch) -> None:
@@ -257,6 +327,42 @@ def test_read_activity_json_contract_output(monkeypatch) -> None:
     assert payload["source"] == "unofficial"
     assert payload["request"] == {"identifier": "urn:li:activity:123456", "dry_run": False}
     assert payload["data"]["post"]["id"] == "urn:li:activity:123456"
+
+
+def test_read_comments_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["read", "comments", "urn:li:activity:123456", "--limit", "5", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "read.comments"
+    assert payload["source"] == "unofficial"
+    assert payload["request"] == {
+        "identifier": "urn:li:activity:123456",
+        "limit": 5,
+        "cursor": None,
+        "dry_run": False,
+    }
+    assert payload["data"]["comments"][0]["text"] == "Nice post"
+    assert payload["data"]["comments"][0]["metrics"]["likes"] == 2
+
+
+def test_read_reactions_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: FakeClient())
+
+    result = runner.invoke(cli, ["read", "reactions", "urn:li:activity:123456", "--limit", "5", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "read.reactions"
+    assert payload["source"] == "unofficial"
+    assert payload["data"]["reactions"][0]["type"] == "like"
+    assert payload["data"]["reactions"][0]["actor"]["id"] == "urn:li:person:abc"
 
 
 def test_read_profile_posts_json_contract_output(monkeypatch) -> None:
@@ -465,6 +571,77 @@ def test_auth_oauth_login_json_contract(monkeypatch, tmp_path) -> None:
     assert payload["command"] == "auth.oauth_login"
     assert payload["data"]["oauth"]["token_saved"] is True
     assert payload["data"]["oauth"]["author_urn"] == "urn:li:person:abc123"
+
+
+def test_auth_permission_check_json_contract(monkeypatch) -> None:
+    runner = CliRunner()
+    oauth = OAuthConfig(
+        access_token="token-123",
+        author_urn="urn:li:person:abc",
+        linkedin_version="202605",
+        source="test",
+    )
+    monkeypatch.setattr("linkedin_cli.cli.load_oauth_config", lambda *args, **kwargs: oauth)
+    monkeypatch.setattr(
+        "linkedin_cli.cli._probe_userinfo",
+        lambda access_token, client: {"status_code": 200, "subject_present": True},
+    )
+    monkeypatch.setattr(
+        "linkedin_cli.cli._probe_posts_author_list",
+        lambda api, author_urn: {"author_urn": author_urn, "count": 1},
+    )
+
+    result = runner.invoke(cli, ["auth", "permission-check", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "auth.permission_check"
+    assert payload["source"] == "official"
+    assert payload["data"]["oauth"] == {
+        "source": "test",
+        "author_urn": "urn:li:person:abc",
+        "linkedin_version": "202605",
+    }
+    assert [probe["name"] for probe in payload["data"]["probes"]] == [
+        "openid.userinfo",
+        "posts.author_list",
+    ]
+    assert payload["data"]["summary"] == {"ok": True, "passed": 2, "failed": 0}
+
+
+def test_auth_permission_check_post_scoped_json_contract(monkeypatch) -> None:
+    runner = CliRunner()
+    oauth = OAuthConfig(
+        access_token="token-123",
+        author_urn="urn:li:person:abc",
+        linkedin_version="202605",
+        source="test",
+    )
+    monkeypatch.setattr("linkedin_cli.cli.load_oauth_config", lambda *args, **kwargs: oauth)
+    monkeypatch.setattr("linkedin_cli.cli._probe_userinfo", lambda access_token, client: {})
+    monkeypatch.setattr("linkedin_cli.cli._probe_posts_author_list", lambda api, author_urn: {})
+    monkeypatch.setattr("linkedin_cli.cli._probe_post_get", lambda api, post_id: {"post_id": post_id})
+    monkeypatch.setattr("linkedin_cli.cli._probe_social_metadata", lambda api, post_id: {"entity": post_id})
+    monkeypatch.setattr("linkedin_cli.cli._probe_comments_list", lambda api, post_id: {"count": 0})
+    monkeypatch.setattr("linkedin_cli.cli._probe_reactions_list", lambda api, post_id: {"count": 0})
+
+    result = runner.invoke(
+        cli,
+        ["auth", "permission-check", "--post-id", "urn:li:ugcPost:123", "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["request"]["post_id"] == "urn:li:ugcPost:123"
+    assert [probe["name"] for probe in payload["data"]["probes"]] == [
+        "openid.userinfo",
+        "posts.author_list",
+        "posts.get",
+        "social.metadata",
+        "comments.list",
+        "reactions.list",
+    ]
 
 
 def test_post_text_dry_run_reads_text_file_json_contract(tmp_path) -> None:

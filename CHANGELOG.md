@@ -6,12 +6,20 @@ The format is based on Keep a Changelog, adapted for this repository.
 
 ## [0.1.0] - 2026-03-09
 
-Initial open-source release.
+Initial open-source release of the Python-based LinkedIn CLI (Click commands).
 
-Highlights:
-- Added a Python-based LinkedIn CLI package with Click commands
-- Added authenticated feed, profile, search, activity, and profile-posts flows
-- Added browser-assisted write flows for posting, reacting, saving, and commenting
-- Added support for `LINKEDIN_COOKIE_HEADER`, minimal env cookies, and browser cookie extraction
-- Added auth diagnostics and direct Voyager transport
-- Added tests, CI workflow, and publish workflow
+Read (unofficial, over the user's own web session):
+- Home feed, saved posts, profile, search, activity, profile-posts, and activity comments/reactions
+- `LINKEDIN_COOKIE_HEADER`, minimal env cookies, and browser cookie extraction
+- Auth diagnostics and direct Voyager transport
+
+Write (official, through LinkedIn OAuth):
+- OAuth login and no-side-effect permission checks
+- Posts API publishing — text, image, multi-image, video, document, poll, article, reshare, update, get, list, and delete (all with `--dry-run`)
+- Official Comments, Reactions, and Social Metadata commands
+- Browser/session fallback for legacy posting, reacting, saving, and commenting
+
+Tooling:
+- `sns-json-v1` output contract across canonical `--json` commands
+- Python write API (`linkedin_cli.LinkedInWriteAPI`)
+- Tests, CI workflow, and publish workflow

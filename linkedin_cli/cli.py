@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import os
 import sys
@@ -9,6 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import httpx
 from rich.console import Console
 
 from . import __version__
@@ -23,6 +26,7 @@ from .constants import COOKIE_REQUIRED_NAMES
 from .contract import activity_data
 from .contract import auth_status_data
 from .contract import comment_list_success_data
+from .contract import comments_data
 from .contract import comment_success_data
 from .contract import envelope
 from .contract import error_envelope
@@ -33,12 +37,14 @@ from .contract import post_delete_success_data
 from .contract import post_get_success_data
 from .contract import post_list_success_data
 from .contract import post_media_dry_run_data
+from .contract import permission_check_data
 from .contract import post_text_dry_run_data
 from .contract import post_text_success_data
 from .contract import post_update_dry_run_data
 from .contract import post_update_success_data
 from .contract import profile_data
 from .contract import reaction_list_success_data
+from .contract import reactions_data
 from .contract import reaction_success_data
 from .contract import saved_unsave_success_data
 from .contract import search_data
@@ -48,25 +54,30 @@ from .contract import to_contract_json
 from .formatter import (
     build_search_table,
     build_status_panel,
+    print_comments,
     print_post_detail,
     print_post_table,
     print_profile,
 )
 from .oauth import OAuthConfigError
 from .oauth import default_oauth_path
+from .oauth import load_oauth_config
 from .oauth_flow import DEFAULT_REDIRECT_URI
 from .oauth_flow import DEFAULT_SCOPES
 from .oauth_flow import ENV_CLIENT_ID
 from .oauth_flow import ENV_CLIENT_SECRET
 from .oauth_flow import ENV_REDIRECT_URI
 from .oauth_flow import OAuthFlowError
+from .oauth_flow import USERINFO_URL
 from .oauth_flow import run_oauth_login
 from .publisher import LinkedInPublishError
 from .serialization import posts_to_json, profile_to_dict, search_results_to_json, to_json
 from .transport import LinkedInTransportError
 
 console = Console(stderr=True)
-REACTION_CHOICES = ["like", "celebrate", "support", "love", "insightful", "curious", "funny"]
+# Browser/session `react` supports these (see client.REACTION_TYPE_MAP); official
+# `reaction create` additionally accepts "funny" (see publisher.REACTION_TYPE_MAP).
+REACTION_CHOICES = ["like", "celebrate", "support", "love", "insightful", "curious"]
 POLL_DURATION_CHOICES = ["one-day", "three-days", "seven-days", "fourteen-days"]
 USER_ERROR_CODES = {
     "auth_missing",
@@ -130,6 +141,55 @@ def _handle_error(exc: Exception) -> None:
 
 def _contract_request(**kwargs) -> dict:
     return kwargs
+
+
+def _cursor_offset(cursor: Optional[str]) -> int:
+    if not cursor:
+        return 0
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        offset = int(payload.get("offset", 0))
+    except Exception as exc:
+        raise LinkedInPublishError(
+            "Invalid cursor.",
+            code="invalid_request",
+            retryable=False,
+        ) from exc
+    if offset < 0:
+        raise LinkedInPublishError(
+            "Invalid cursor.",
+            code="invalid_request",
+            retryable=False,
+        )
+    return offset
+
+
+def _cursor_for_offset(offset: int) -> str:
+    payload = json.dumps({"offset": offset}, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+
+
+def _fetch_limit_for_page(limit: Optional[int], cursor: Optional[str]) -> Optional[int]:
+    if limit is None:
+        return None
+    if limit <= 0:
+        raise LinkedInPublishError(
+            "Limit must be greater than 0.",
+            code="invalid_request",
+            retryable=False,
+        )
+    return _cursor_offset(cursor) + limit + 1
+
+
+def _page_items(items: list, *, limit: Optional[int], cursor: Optional[str]) -> tuple[list, Optional[str], bool]:
+    offset = _cursor_offset(cursor)
+    if limit is None:
+        return items[offset:], None, False
+    page = items[offset : offset + limit]
+    has_more = len(items) > offset + limit
+    next_cursor = _cursor_for_offset(offset + limit) if has_more else None
+    return page, next_cursor, has_more
 
 
 def _resolve_post_text(text_body: Optional[str], text_file: Optional[str]) -> str:
@@ -273,6 +333,29 @@ def _handle_contract_error(
     _write_output(output_file, rendered)
     click.echo(rendered)
     raise SystemExit(_exit_code_for_error(code)) from exc
+
+
+def _permission_probe(name: str, callback) -> dict:
+    try:
+        result = callback()
+    except Exception as exc:
+        code, retryable, details = _classify_contract_error(exc)
+        return {
+            "name": name,
+            "ok": False,
+            "code": code,
+            "message": str(exc),
+            "retryable": retryable,
+            "details": details,
+        }
+    return {
+        "name": name,
+        "ok": True,
+        "code": None,
+        "message": "ok",
+        "retryable": False,
+        "details": result if isinstance(result, dict) else {},
+    }
 
 
 @click.group()
@@ -510,6 +593,168 @@ def auth_oauth_login(
     )
 
 
+@auth_group.command("permission-check")
+@click.option("--post-id", type=str, default=None, help="Optional share/ugcPost/activity URN or feed URL for post-scoped probes.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+def auth_permission_check(
+    post_id: Optional[str],
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+    as_json: bool,
+    output_file: Optional[str],
+) -> None:
+    """Probe official LinkedIn OAuth permissions without mutating LinkedIn."""
+    request = _contract_request(post_id=post_id, author=author_urn, dry_run=False)
+    try:
+        oauth = load_oauth_config(
+            Path(oauth_file) if oauth_file else None,
+            author_override=author_urn,
+            version_override=linkedin_version,
+        )
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(
+                command="auth.permission_check",
+                source="official",
+                request=request,
+                exc=exc,
+                output_file=output_file,
+            )
+        _handle_error(exc)
+
+    probes: list[dict] = []
+    with httpx.Client(timeout=20.0) as http:
+        probes.append(
+            _permission_probe(
+                "openid.userinfo",
+                lambda: _probe_userinfo(oauth.access_token, http),
+            )
+        )
+    with LinkedInWriteAPI(oauth) as api:
+        probes.append(
+            _permission_probe(
+                "posts.author_list",
+                lambda: _probe_posts_author_list(api, oauth.author_urn),
+            )
+        )
+        if post_id:
+            probes.extend(
+                [
+                    _permission_probe("posts.get", lambda: _probe_post_get(api, post_id)),
+                    _permission_probe("social.metadata", lambda: _probe_social_metadata(api, post_id)),
+                    _permission_probe("comments.list", lambda: _probe_comments_list(api, post_id)),
+                    _permission_probe("reactions.list", lambda: _probe_reactions_list(api, post_id)),
+                ]
+            )
+
+    data = permission_check_data(
+        oauth={
+            "source": oauth.source,
+            "author_urn": oauth.author_urn,
+            "linkedin_version": oauth.linkedin_version,
+        },
+        probes=probes,
+    )
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="auth.permission_check",
+                source="official",
+                request=request,
+                data=data,
+            ),
+            output_file=output_file,
+        )
+        return
+
+    lines = [
+        f"author_urn={oauth.author_urn}",
+        f"linkedin_version={oauth.linkedin_version}",
+    ]
+    for probe in probes:
+        status = "ok" if probe["ok"] else probe["code"]
+        lines.append(f"{probe['name']}={status}")
+    console.print(build_status_panel("Permission check", data["summary"]["ok"], "\n".join(lines)))
+
+
+def _probe_userinfo(access_token: str, client: httpx.Client) -> dict:
+    response = client.get(USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"})
+    if response.status_code != 200:
+        raise LinkedInPublishError(
+            _permission_response_message(response, fallback="LinkedIn userinfo request failed."),
+            code="permission_denied" if response.status_code == 403 else "auth_expired",
+            retryable=False,
+            status_code=response.status_code,
+            details={"status_code": response.status_code},
+        )
+    payload = response.json()
+    return {
+        "status_code": response.status_code,
+        "subject_present": bool(payload.get("sub")),
+        "email_present": bool(payload.get("email")),
+    }
+
+
+def _probe_posts_author_list(api: LinkedInWriteAPI, author_urn: str) -> dict:
+    result = api.list_posts_by_author(author_urn=author_urn, count=1, start=0)
+    return {
+        "author_urn": result.author_urn,
+        "count": len(result.elements),
+        "paging": result.paging,
+    }
+
+
+def _probe_post_get(api: LinkedInWriteAPI, post_id: str) -> dict:
+    result = api.get_post(post_id=post_id)
+    return {
+        "post_id": result.post_id,
+        "raw_keys": sorted(result.raw.keys()),
+    }
+
+
+def _probe_social_metadata(api: LinkedInWriteAPI, post_id: str) -> dict:
+    result = api.get_social_metadata(entity=post_id)
+    return {
+        "entity": result.entity_urn,
+        "raw_keys": sorted(result.raw.keys()),
+    }
+
+
+def _probe_comments_list(api: LinkedInWriteAPI, post_id: str) -> dict:
+    result = api.list_comments(entity=post_id, count=1, start=0)
+    return {
+        "entity": result.entity_urn,
+        "count": len(result.elements),
+        "paging": result.paging,
+    }
+
+
+def _probe_reactions_list(api: LinkedInWriteAPI, post_id: str) -> dict:
+    result = api.list_reactions(entity=post_id, count=1, start=0)
+    return {
+        "entity": result.entity_urn,
+        "count": len(result.elements),
+        "paging": result.paging,
+    }
+
+
+def _permission_response_message(response: httpx.Response, *, fallback: str) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+    if isinstance(payload, dict):
+        message = payload.get("message") or payload.get("error_description") or payload.get("error")
+        if message:
+            return f"LinkedIn API rejected the request: {message}"
+    return fallback
+
+
 @cli.command()
 @click.option("--max", "max_count", type=int, default=None, help="Maximum number of feed items to fetch.")
 @click.option("--json", "as_json", is_flag=True, help="Emit JSON to stdout.")
@@ -550,7 +795,9 @@ def read_feed(
     """Fetch the authenticated home feed."""
     request = _contract_request(limit=limit, cursor=cursor, dry_run=False)
     try:
-        posts = _client_from_ctx(ctx).feed(limit=limit)
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        posts = _client_from_ctx(ctx).feed(limit=fetch_limit)
+        posts, next_cursor, has_more = _page_items(posts, limit=limit, cursor=cursor)
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -568,7 +815,7 @@ def read_feed(
                 command="read.feed",
                 source="unofficial",
                 request=request,
-                data=feed_data(posts, cursor=cursor),
+                data=feed_data(posts, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
             ),
             output_file=output_file,
         )
@@ -593,7 +840,9 @@ def read_saved(
     """Fetch saved posts from the authenticated account."""
     request = _contract_request(limit=limit, cursor=cursor, dry_run=False)
     try:
-        posts = _client_from_ctx(ctx).get_saved_posts(limit=limit)
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        posts = _client_from_ctx(ctx).get_saved_posts(limit=fetch_limit)
+        posts, next_cursor, has_more = _page_items(posts, limit=limit, cursor=cursor)
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -611,7 +860,7 @@ def read_saved(
                 command="read.saved",
                 source="unofficial",
                 request=request,
-                data=feed_data(posts, cursor=cursor),
+                data=feed_data(posts, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
             ),
             output_file=output_file,
         )
@@ -679,7 +928,9 @@ def read_search(
     """Search LinkedIn entities and posts."""
     request = _contract_request(query=query, limit=limit, cursor=cursor, dry_run=False)
     try:
-        results = _client_from_ctx(ctx).search(query, limit=limit)
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        results = _client_from_ctx(ctx).search(query, limit=fetch_limit)
+        results, next_cursor, has_more = _page_items(results, limit=limit, cursor=cursor)
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -697,7 +948,7 @@ def read_search(
                 command="read.search",
                 source="unofficial",
                 request=request,
-                data=search_data(results, cursor=cursor),
+                data=search_data(results, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
             ),
             output_file=output_file,
         )
@@ -743,6 +994,94 @@ def read_activity(
     print_post_detail(post, console=console)
 
 
+@read.command("comments")
+@click.argument("identifier")
+@click.option("--limit", type=int, default=None, help="Maximum number of comments to fetch.")
+@click.option("--cursor", type=str, default=None, help="Opaque pagination cursor.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+@click.pass_context
+def read_comments(
+    ctx: click.Context,
+    identifier: str,
+    limit: Optional[int],
+    cursor: Optional[str],
+    as_json: bool,
+    output_file: Optional[str],
+) -> None:
+    """Fetch comments for one LinkedIn activity through unofficial read APIs."""
+    request = _contract_request(identifier=identifier, limit=limit, cursor=cursor, dry_run=False)
+    try:
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        comments = _client_from_ctx(ctx).get_comments(identifier, limit=fetch_limit)
+        comments, next_cursor, has_more = _page_items(comments, limit=limit, cursor=cursor)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(
+                command="read.comments",
+                source="unofficial",
+                request=request,
+                exc=exc,
+                output_file=output_file,
+            )
+        _handle_error(exc)
+    payload = envelope(
+        command="read.comments",
+        source="unofficial",
+        request=request,
+        data=comments_data(comments, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
+    )
+    if as_json:
+        _emit_contract(payload, output_file=output_file)
+        return
+    _write_output(output_file, to_contract_json(payload))
+    print_comments(comments, console=console, title=f"Comments for {identifier}")
+
+
+@read.command("reactions")
+@click.argument("identifier")
+@click.option("--limit", type=int, default=None, help="Maximum number of reactions to fetch.")
+@click.option("--cursor", type=str, default=None, help="Opaque pagination cursor.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
+@click.pass_context
+def read_reactions(
+    ctx: click.Context,
+    identifier: str,
+    limit: Optional[int],
+    cursor: Optional[str],
+    as_json: bool,
+    output_file: Optional[str],
+) -> None:
+    """Fetch reactions for one LinkedIn activity through unofficial read APIs."""
+    request = _contract_request(identifier=identifier, limit=limit, cursor=cursor, dry_run=False)
+    try:
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        reactions = _client_from_ctx(ctx).get_reactions(identifier, limit=fetch_limit)
+        reactions, next_cursor, has_more = _page_items(reactions, limit=limit, cursor=cursor)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(
+                command="read.reactions",
+                source="unofficial",
+                request=request,
+                exc=exc,
+                output_file=output_file,
+            )
+        _handle_error(exc)
+    payload = envelope(
+        command="read.reactions",
+        source="unofficial",
+        request=request,
+        data=reactions_data(reactions, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
+    )
+    if as_json:
+        _emit_contract(payload, output_file=output_file)
+        return
+    _write_output(output_file, to_contract_json(payload))
+    console.print(to_json(payload["data"]))
+
+
 @read.command("profile-posts")
 @click.argument("identifier")
 @click.option("--limit", type=int, default=None, help="Maximum number of posts to fetch.")
@@ -761,7 +1100,9 @@ def read_profile_posts(
     """Fetch posts for a LinkedIn profile as SNS JSON Contract v1."""
     request = _contract_request(identifier=identifier, limit=limit, cursor=cursor, dry_run=False)
     try:
-        posts = _client_from_ctx(ctx).get_profile_posts(identifier, limit=limit)
+        fetch_limit = _fetch_limit_for_page(limit, cursor)
+        posts = _client_from_ctx(ctx).get_profile_posts(identifier, limit=fetch_limit)
+        posts, next_cursor, has_more = _page_items(posts, limit=limit, cursor=cursor)
     except Exception as exc:
         if as_json:
             _handle_contract_error(
@@ -775,7 +1116,7 @@ def read_profile_posts(
         command="read.profile_posts",
         source="unofficial",
         request=request,
-        data=feed_data(posts, cursor=cursor),
+        data=feed_data(posts, cursor=cursor, next_cursor=next_cursor, has_more=has_more),
     )
     if as_json:
         _emit_contract(payload, output_file=output_file)

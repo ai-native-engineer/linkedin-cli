@@ -15,6 +15,10 @@
     "sns-json-v1",
     "unofficial-read",
     "official-post",
-    "personal-workflow"
+    "personal-workflow",
+    "oauth",
+    "comments",
+    "reactions",
+    "media"
   ]
 }

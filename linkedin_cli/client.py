@@ -140,6 +140,41 @@ class LinkedInClient:
 
         return self._retry("activity", run)
 
+    def get_comments(self, identifier: str, limit: Optional[int] = None) -> list[Comment]:
+        """Fetch comments for one activity through the unofficial read session."""
+        activity_urn = self.normalize_activity_urn(identifier)
+        if not activity_urn.startswith("urn:li:activity:"):
+            raise LinkedInClientError(
+                f"Comment lookup requires an activity URN; got {activity_urn}."
+            )
+        activity_id = activity_urn.split(":")[-1]
+        count = self._resolve_limit(limit)
+
+        def run() -> list[Comment]:
+            comments = self.api.get_post_comments(activity_id, comment_count=count)
+            return [
+                self._normalize_comment(item, activity_urn)
+                for item in comments
+                if isinstance(item, dict)
+            ][:count]
+
+        return self._retry("comments", run)
+
+    def get_reactions(self, identifier: str, limit: Optional[int] = None) -> list[dict[str, Any]]:
+        """Fetch raw reactions for one activity through the unofficial read session."""
+        activity_urn = self.normalize_activity_urn(identifier)
+        if not activity_urn.startswith("urn:li:activity:"):
+            raise LinkedInClientError(
+                f"Reaction lookup requires an activity URN; got {activity_urn}."
+            )
+        count = self._resolve_limit(limit)
+
+        def run() -> list[dict[str, Any]]:
+            reactions = self.api.get_post_reactions(activity_urn, max_results=count)
+            return [item for item in reactions if isinstance(item, dict)][:count]
+
+        return self._retry("reactions", run)
+
     def post(self, text: str, visibility: str = "connections") -> str:
         return self._browser_result(self.browser.create_post(text, visibility))
 

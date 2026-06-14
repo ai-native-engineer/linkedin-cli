@@ -8,7 +8,7 @@ from .api import PostPlan
 
 
 try:
-    __version__ = version("linkedin-cli")
+    __version__ = version("agent-linkedin")
 except PackageNotFoundError:
     __version__ = "0.1.0"
 

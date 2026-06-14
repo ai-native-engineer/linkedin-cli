@@ -18,7 +18,7 @@
 - `read.*`: unofficial read workflows that use your own authenticated LinkedIn web session.
 - `post.*`: official write workflows that use LinkedIn OAuth and official LinkedIn APIs.
 
-Tags: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`
+Tags: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`, `oauth`, `comments`, `reactions`, `media`
 
 > This project is not affiliated with LinkedIn. Read commands use unofficial web behavior and may break when LinkedIn changes its internal endpoints. Review the terms that apply to your account.
 
@@ -32,6 +32,8 @@ Read:
 - Search people and posts.
 - Fetch posts from a profile.
 - Inspect one activity.
+- Read comments on an activity.
+- Read reactions on an activity.
 - Emit `sns-json-v1` JSON for agents, scripts, and the SNS CLI ecosystem.
 
 Write:
@@ -93,6 +95,13 @@ export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; bcookie="..."; 
 linkedin-cli auth-status
 ```
 
+Check official OAuth permissions without mutating LinkedIn:
+
+```bash
+linkedin-cli auth permission-check --json
+linkedin-cli auth permission-check --post-id urn:li:ugcPost:1234567890 --json
+```
+
 Then run read commands:
 
 ```bash
@@ -101,6 +110,8 @@ linkedin-cli read saved --limit 10 --json
 linkedin-cli read profile seungwon-aiden --json
 linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
+linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
+linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "AI engineer" --limit 10 --json
 ```
 
@@ -284,6 +295,8 @@ Official references:
 - LinkedIn Posts API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
 - LinkedIn MultiImage Post API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/multiimage-post-api
 - LinkedIn Videos API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api
+- LinkedIn Documents API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/documents-api
+- LinkedIn Poll API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/poll-post-api
 - LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
 - LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
 - LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api
@@ -335,6 +348,8 @@ linkedin-cli read saved --limit 20 --json
 linkedin-cli read profile seungwon-aiden --json
 linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
+linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
+linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "product manager" --limit 10 --json
 
 linkedin-cli saved list --limit 20 --json
@@ -345,6 +360,8 @@ linkedin-cli post text --text-file draft.md --visibility public --json
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --json
 linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --json
+linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck" --json
+linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --json
 linkedin-cli post article --text "read this" --url https://example.com/post --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --json
@@ -357,6 +374,7 @@ linkedin-cli comment list urn:li:ugcPost:1234567890 --json
 linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
 linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
 linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
 
 linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
 linkedin-cli reaction get urn:li:ugcPost:1234567890 --json
@@ -370,6 +388,7 @@ linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
 Legacy compatibility commands:
 
 ```bash
+linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
 linkedin-cli profile seungwon-aiden --json
 linkedin-cli profile-posts seungwon-aiden --max 20
@@ -429,13 +448,15 @@ print(delete_result.deleted_at)
 
 ## Skills and Plugin
 
-This repository ships three project-local skills. The source lives in [`.agents/skills/`](./.agents/skills); `skills/` and `.claude/skills/` are symlinks to it.
+This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/` and `.claude/skills/` are symlinks that point at it.
 
-- [`linkedin-cli`](./.agents/skills/linkedin-cli) — setup, auth, read workflows, command selection
-- [`linkedin-cli-auth`](./.agents/skills/linkedin-cli-auth) — session, cookie, and OAuth diagnostics
-- [`linkedin-cli-write`](./.agents/skills/linkedin-cli-write) — posting and safe mutations
+- [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
+- [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — first-time setup and OAuth/cookie auth
+- [command-cookbook.md](./.agents/skills/linkedin-cli/references/command-cookbook.md) — exact command patterns and JSON usage
+- [auth-troubleshooting.md](./.agents/skills/linkedin-cli/references/auth-troubleshooting.md) — session recovery and diagnostics
+- [write-workflows.md](./.agents/skills/linkedin-cli/references/write-workflows.md) — official publishing and safe mutations
 
-They also ship as a Claude plugin ([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json), [`marketplace.json`](./.claude-plugin/marketplace.json)).
+Claude plugin metadata lives in [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json).
 
 ## Development
 

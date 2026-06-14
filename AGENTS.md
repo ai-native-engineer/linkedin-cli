@@ -7,10 +7,12 @@ Guidance for AI agents and contributors working on `linkedin-cli`.
 `linkedin-cli` is a terminal-first LinkedIn CLI with two clearly separated surfaces:
 
 - `read.*` — unofficial reads over the user's own authenticated LinkedIn web session.
-- `post.*` — official writes through LinkedIn OAuth and the Share on LinkedIn / UGC Posts API.
+- `post.*`, `comment.*`, `reaction.*`, `social.*` — official writes through LinkedIn OAuth and the
+  Share on LinkedIn / Posts / Comments / Reactions / Social Metadata APIs.
 
-Legacy browser-fallback commands (`react`, `save`, `comment`, old-style `post`) are kept for
-compatibility but are not the canonical surface.
+Browser/session-fallback commands — the top-level `react`, `unreact`, `save`, `unsave`, the hidden
+`post "text"`, and `comment <id> <text>` — are kept for compatibility but are not the canonical
+surface. Do not confuse them with the official `post.*`/`comment.*`/`reaction.*`/`social.*` groups.
 
 ## Layout
 
@@ -18,8 +20,8 @@ compatibility but are not the canonical surface.
   the read path; `oauth*.py`/`publisher.py`/`api.py` drive the official write path;
   `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` is the Playwright fallback.
 - `.agents/skills/` — source for the `linkedin-cli` agent skill (setup, auth, read, and write
-  workflows in one skill); `skills/` and `.claude/skills/` are symlinks to it. Also shipped as a Claude
-  plugin via `.claude-plugin/` (`plugin.json` + `marketplace.json`). Edit the source, never the symlinks.
+  workflows in one skill); `skills/` and `.claude/skills/` are symlinks to it. Claude plugin metadata
+  lives in `.claude-plugin/plugin.json`. Edit the source, never the symlinks.
 - `tests/` — unit tests; no live LinkedIn session required.
 
 ## Output Contract

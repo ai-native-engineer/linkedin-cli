@@ -39,15 +39,6 @@ COOKIE_REQUIRED_NAMES = (
     "JSESSIONID",
 )
 
-REACTION_TYPES = {
-    "like": "LIKE",
-    "celebrate": "PRAISE",
-    "support": "APPRECIATION",
-    "love": "EMPATHY",
-    "insightful": "INTEREST",
-    "curious": "ENTERTAINMENT",
-}
-
 VISIBILITY_OPTIONS = (
     "connections",
     "public",
