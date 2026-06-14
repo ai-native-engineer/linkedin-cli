@@ -1,7 +1,7 @@
 {
   "name": "linkedin-cli",
   "version": "0.1.0",
-  "description": "AI-native LinkedIn CLI: drive personal LinkedIn workflows from the terminal. Unofficial reads (feed, saved, profiles, search) over your own session, plus official OAuth publishing (post text/media/article/reshare/update/delete) with sns-json-v1 output. Bundles three skills: linkedin-cli, linkedin-cli-auth, linkedin-cli-write.",
+  "description": "AI-native LinkedIn CLI: drive personal LinkedIn workflows from the terminal. Unofficial reads over your own session, plus official OAuth publishing, comments, reactions, social metadata, and sns-json-v1 output. Bundles three skills: linkedin-cli, linkedin-cli-auth, linkedin-cli-write.",
   "author": {
     "name": "Aiden Ahn",
     "email": "senugw0u@gmail.com"

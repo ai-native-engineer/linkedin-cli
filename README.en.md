@@ -41,10 +41,12 @@ Write:
 - Publish one local image through LinkedIn Images + Posts APIs.
 - Publish multi-image posts with 2-20 local images.
 - Publish one local MP4 video through LinkedIn Videos + Posts APIs.
+- Publish PDF/DOC/DOCX/PPT/PPTX documents through LinkedIn Documents + Posts APIs.
+- Publish non-sponsored polls through the Posts API.
 - Publish article/link posts.
 - Reshare existing posts.
 - Update post commentary.
-- List, retrieve, create, and update comments through the official Comments API.
+- List, retrieve, create, update, and delete comments through the official Comments API.
 - List, retrieve, create, and delete reactions through the official Reactions API.
 - Retrieve social metadata and open/close comments through the official Social Metadata API.
 - Retrieve one post or list posts by author when the token has the required read permission.
@@ -110,6 +112,8 @@ linkedin-cli post text --text "hello from linkedin-cli" --visibility public --js
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --dry-run --json
 linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --dry-run --json
+linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck" --dry-run --json
+linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --dry-run --json
 linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --dry-run --json
@@ -120,6 +124,7 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
 linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
 linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
 linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
 linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
@@ -136,6 +141,7 @@ linkedin-cli post text --text-file draft.md --visibility public --json
 ## Official OAuth Token Setup
 
 Official `post.*` commands require a LinkedIn Developer app and an access token with `w_member_social`.
+Official `comment.*`, `reaction.*`, and `social.*` commands may require additional permissions such as `w_member_social_feed`, `r_member_social_feed`, `w_organization_social_feed`, or `r_organization_social_feed`, depending on your LinkedIn app/product approval.
 
 ### 1. Create a LinkedIn Developer app
 
@@ -165,6 +171,7 @@ In the app's Products/Auth settings, make sure the app can request:
 - `w_member_social`
 
 The CLI uses `openid profile email` to identify the authenticated member and `w_member_social` to create, modify, and delete posts on that member's behalf.
+Comments, reactions, and social metadata commands need LinkedIn Social Feed permissions. If the token does not have them, the CLI returns a `permission_denied` JSON envelope.
 
 ### 3. Add redirect URLs
 
@@ -264,6 +271,7 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 - Confirm the app has the Share on LinkedIn / member social product enabled.
 - Re-run `auth oauth-login` after the product/scope is enabled.
 - Confirm the OAuth consent screen shows `w_member_social`.
+- For comments, reactions, and social metadata, confirm whether `w_member_social_feed`/`r_member_social_feed` or organization social feed permissions are required.
 
 `auth_expired`
 
@@ -276,6 +284,9 @@ Official references:
 - LinkedIn Posts API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
 - LinkedIn MultiImage Post API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/multiimage-post-api
 - LinkedIn Videos API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api
+- LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
+- LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
+- LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api
 
 ## Read Authentication
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from linkedin_cli.api import DRY_RUN_IMAGE_URN
 from linkedin_cli.api import DRY_RUN_VIDEO_URN
+from linkedin_cli.api import DRY_RUN_DOCUMENT_URN
 from linkedin_cli.api import LinkedInWriteAPI
 from linkedin_cli.oauth import OAuthConfig
 from linkedin_cli.publisher import DeleteResult
@@ -25,6 +26,8 @@ class FakePublisher:
         self.image_calls = []
         self.multi_image_calls = []
         self.video_calls = []
+        self.document_calls = []
+        self.poll_calls = []
         self.delete_calls = []
         self.article_calls = []
         self.reshare_calls = []
@@ -57,6 +60,22 @@ class FakePublisher:
         if title:
             media["title"] = title
         payload["content"] = {"media": media}
+        return payload
+
+    def build_document_payload(self, *, text, visibility, document_urn, title):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        payload["content"] = {"media": {"id": document_urn, "title": title}}
+        return payload
+
+    def build_poll_payload(self, *, text, visibility, question, options, duration):
+        payload = self.build_text_payload(text=text, visibility=visibility)
+        payload["content"] = {
+            "poll": {
+                "question": question,
+                "options": [{"text": option} for option in options],
+                "settings": {"duration": duration.upper().replace("-", "_")},
+            }
+        }
         return payload
 
     def build_article_payload(self, *, text, visibility, url, title=None, description=None, thumbnail=None):
@@ -123,6 +142,41 @@ class FakePublisher:
         return PublishResult(
             post_id="urn:li:share:video",
             url="https://www.linkedin.com/feed/update/urn:li:share:video/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def post_document(self, *, text, visibility, media_path, title=None):
+        self.document_calls.append(
+            {
+                "text": text,
+                "visibility": visibility,
+                "media_path": media_path,
+                "title": title,
+            }
+        )
+        return PublishResult(
+            post_id="urn:li:share:document",
+            url="https://www.linkedin.com/feed/update/urn:li:share:document/",
+            created_at="2026-06-15T00:00:00Z",
+            visibility=visibility,
+            raw={},
+        )
+
+    def post_poll(self, *, text, visibility, question, options, duration):
+        self.poll_calls.append(
+            {
+                "text": text,
+                "visibility": visibility,
+                "question": question,
+                "options": options,
+                "duration": duration,
+            }
+        )
+        return PublishResult(
+            post_id="urn:li:share:poll",
+            url="https://www.linkedin.com/feed/update/urn:li:share:poll/",
             created_at="2026-06-15T00:00:00Z",
             visibility=visibility,
             raw={},
@@ -226,6 +280,22 @@ class FakePublisher:
         )
         return SocialActionResult(
             action="comment.update",
+            entity_urn=entity,
+            completed_at="2026-06-15T00:00:00Z",
+            raw={"status_code": 204},
+        )
+
+    def delete_comment(self, *, entity, comment_id, actor_urn=None):
+        self.comment_calls.append(
+            {
+                "method": "delete",
+                "entity": entity,
+                "comment_id": comment_id,
+                "actor_urn": actor_urn,
+            }
+        )
+        return SocialActionResult(
+            action="comment.delete",
             entity_urn=entity,
             completed_at="2026-06-15T00:00:00Z",
             raw={"status_code": 204},
@@ -418,6 +488,94 @@ def test_create_video_post_delegates_to_publisher() -> None:
     ]
 
 
+def test_plan_document_post_uses_dry_run_document_placeholder() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_document_post(
+        text=" hello doc ",
+        media_path="deck.pdf",
+        visibility="public",
+        title="Deck",
+    )
+
+    assert plan.command == "post.document"
+    assert plan.api == "linkedin.posts+documents"
+    assert plan.text_length == 9
+    assert plan.media_count == 1
+    assert plan.payload["content"]["media"] == {
+        "id": DRY_RUN_DOCUMENT_URN,
+        "title": "Deck",
+    }
+    assert plan.media_paths == (str(Path("deck.pdf").expanduser()),)
+
+
+def test_create_document_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.create_document_post(
+        text="hello",
+        media_path="deck.pdf",
+        visibility="public",
+        title="Deck",
+    )
+
+    assert result.post_id == "urn:li:share:document"
+    assert fake.document_calls == [
+        {
+            "text": "hello",
+            "visibility": "public",
+            "media_path": Path("deck.pdf"),
+            "title": "Deck",
+        }
+    ]
+
+
+def test_plan_poll_post_returns_programmatic_payload() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_poll_post(
+        text=" vote ",
+        question="Pick one",
+        options=("A", "B"),
+        duration="three-days",
+        visibility="public",
+    )
+
+    assert plan.command == "post.poll"
+    assert plan.api == "linkedin.posts+polls"
+    assert plan.text_length == 4
+    assert plan.payload["content"]["poll"] == {
+        "question": "Pick one",
+        "options": [{"text": "A"}, {"text": "B"}],
+        "settings": {"duration": "THREE_DAYS"},
+    }
+
+
+def test_create_poll_post_delegates_to_publisher() -> None:
+    fake = FakePublisher()
+    api = _api(fake)
+
+    result = api.create_poll_post(
+        text="hello",
+        question="Pick one",
+        options=("A", "B"),
+        duration="three-days",
+        visibility="public",
+    )
+
+    assert result.post_id == "urn:li:share:poll"
+    assert fake.poll_calls == [
+        {
+            "text": "hello",
+            "visibility": "public",
+            "question": "Pick one",
+            "options": ("A", "B"),
+            "duration": "three-days",
+        }
+    ]
+
+
 def test_plan_delete_post_returns_programmatic_payload() -> None:
     api = _api(FakePublisher())
 
@@ -509,12 +667,14 @@ def test_comment_methods_delegate_to_publisher() -> None:
     comment = api.get_comment(entity="urn:li:ugcPost:1", comment_id="comment-1")
     created = api.create_comment(entity="urn:li:ugcPost:1", text="hello")
     updated = api.update_comment(entity="urn:li:ugcPost:1", comment_id="comment-1", text="updated")
+    deleted = api.delete_comment(entity="urn:li:ugcPost:1", comment_id="comment-1")
 
     assert comments.elements == [{"id": "comment-1"}]
     assert comment.comment_id == "comment-1"
     assert created.comment_id == "comment-1"
     assert updated.action == "comment.update"
-    assert [call["method"] for call in fake.comment_calls] == ["list", "get", "create", "update"]
+    assert deleted.action == "comment.delete"
+    assert [call["method"] for call in fake.comment_calls] == ["list", "get", "create", "update", "delete"]
 
 
 def test_reaction_methods_delegate_to_publisher() -> None:

@@ -11,7 +11,7 @@ Use this project-local skill for LinkedIn setup, auth, read workflows, official 
 
 - Run commands from the repository root unless the user has installed the package globally.
 - Treat `read.*` as unofficial: it uses the user's own LinkedIn web session.
-- Treat `post.*` as official: it uses LinkedIn Posts API with OAuth `w_member_social`.
+- Treat `post.*`, `comment.*`, `reaction.*`, and `social.*` as official: they use LinkedIn REST APIs with OAuth. Comments, reactions, and social metadata may require Social Feed permissions beyond `w_member_social`.
 - Never print cookies, access tokens, client secrets, passwords, or browser storage-state contents.
 - Use `--dry-run --json` before live publishing generated content.
 

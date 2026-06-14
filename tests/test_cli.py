@@ -913,6 +913,195 @@ def test_post_video_publish_json_contract_output(monkeypatch) -> None:
     assert payload["data"]["post"]["id"] == "urn:li:share:video"
 
 
+def test_post_document_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "document",
+            "--text",
+            "hello document",
+            "--document",
+            "deck.pdf",
+            "--title",
+            "Deck",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.document"
+    assert payload["source"] == "official"
+    assert payload["request"]["media_count"] == 1
+    assert payload["request"]["document"] == "deck.pdf"
+    assert payload["data"]["planned"]["api"] == "linkedin.posts+documents"
+    assert payload["data"]["planned"]["media_path"].endswith("deck.pdf")
+    assert payload["data"]["planned"]["title"] == "Deck"
+
+
+def test_post_document_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_document_post(self, *, text, visibility, media_path, title):
+            assert text == "hello document"
+            assert visibility == "public"
+            assert media_path == "deck.pdf"
+            assert title == "Deck"
+            return PublishResult(
+                post_id="urn:li:share:document",
+                url="https://www.linkedin.com/feed/update/urn:li:share:document/",
+                created_at="2026-06-15T00:00:00Z",
+                visibility="public",
+                raw={"status_code": 201, "request": {"media": {"document": "urn:li:document:abc"}}},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "document",
+            "--text",
+            "hello document",
+            "--document",
+            "deck.pdf",
+            "--title",
+            "Deck",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.document"
+    assert payload["data"]["post"]["id"] == "urn:li:share:document"
+
+
+def test_post_poll_dry_run_json_contract_output() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "poll",
+            "--text",
+            "please vote",
+            "--question",
+            "Pick one",
+            "--option",
+            "Red",
+            "--option",
+            "Blue",
+            "--duration",
+            "seven-days",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.poll"
+    assert payload["source"] == "official"
+    assert payload["request"]["option_count"] == 2
+    assert payload["data"]["planned"]["api"] == "linkedin.posts+polls"
+    assert payload["data"]["planned"]["duration"] == "SEVEN_DAYS"
+    assert payload["data"]["planned"]["option_count"] == 2
+
+
+def test_post_poll_rejects_single_option_json_contract() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "poll",
+            "--text",
+            "please vote",
+            "--question",
+            "Pick one",
+            "--option",
+            "Red",
+            "--dry-run",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["command"] == "post.poll"
+    assert payload["error"]["code"] == "invalid_request"
+    assert payload["error"]["details"]["min_option_count"] == 2
+
+
+def test_post_poll_publish_json_contract_output(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class FakeWriteAPI:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return None
+
+        def create_poll_post(self, *, text, visibility, question, options, duration):
+            assert text == "please vote"
+            assert visibility == "public"
+            assert question == "Pick one"
+            assert options == ("Red", "Blue")
+            assert duration == "three-days"
+            return PublishResult(
+                post_id="urn:li:share:poll",
+                url="https://www.linkedin.com/feed/update/urn:li:share:poll/",
+                created_at="2026-06-15T00:00:00Z",
+                visibility="public",
+                raw={"status_code": 201, "request": {"media": {"poll": {"question": "Pick one"}}}},
+            )
+
+    monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
+
+    result = runner.invoke(
+        cli,
+        [
+            "post",
+            "poll",
+            "--text",
+            "please vote",
+            "--question",
+            "Pick one",
+            "--option",
+            "Red",
+            "--option",
+            "Blue",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["ok"] is True
+    assert payload["command"] == "post.poll"
+    assert payload["data"]["post"]["id"] == "urn:li:share:poll"
+
+
 def test_post_article_dry_run_json_contract_output() -> None:
     runner = CliRunner()
 
@@ -1185,6 +1374,14 @@ def test_comment_get_and_update_json_contract_output(monkeypatch) -> None:
                 raw={"status_code": 204},
             )
 
+        def delete_comment(self, *, entity, comment_id, actor_urn=None):
+            return SocialActionResult(
+                action="comment.delete",
+                entity_urn=entity,
+                completed_at="2026-06-15T00:00:00Z",
+                raw={"status_code": 204},
+            )
+
     monkeypatch.setattr("linkedin_cli.cli._write_api_from_options", lambda **kwargs: FakeWriteAPI())
 
     get_result = runner.invoke(cli, ["comment", "get", "urn:li:ugcPost:1", "comment-1", "--json"])
@@ -1192,6 +1389,7 @@ def test_comment_get_and_update_json_contract_output(monkeypatch) -> None:
         cli,
         ["comment", "update", "urn:li:ugcPost:1", "comment-1", "--text", "updated", "--json"],
     )
+    delete_result = runner.invoke(cli, ["comment", "delete", "urn:li:ugcPost:1", "comment-1", "--json"])
 
     assert get_result.exit_code == 0
     assert json.loads(get_result.output)["command"] == "comment.get"
@@ -1199,6 +1397,10 @@ def test_comment_get_and_update_json_contract_output(monkeypatch) -> None:
     update_payload = json.loads(update_result.output)
     assert update_payload["command"] == "comment.update"
     assert update_payload["data"]["action"] == "comment.update"
+    assert delete_result.exit_code == 0
+    delete_payload = json.loads(delete_result.output)
+    assert delete_payload["command"] == "comment.delete"
+    assert delete_payload["data"]["action"] == "comment.delete"
 
 
 def test_comment_legacy_route_still_works(monkeypatch) -> None:

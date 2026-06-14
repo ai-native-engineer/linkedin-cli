@@ -28,6 +28,7 @@ DRY_RUN_ACCESS_TOKEN = "DRY_RUN"
 DRY_RUN_AUTHOR_URN = "urn:li:person:DRY_RUN"
 DRY_RUN_IMAGE_URN = "urn:li:image:DRY_RUN"
 DRY_RUN_VIDEO_URN = "urn:li:video:DRY_RUN"
+DRY_RUN_DOCUMENT_URN = "urn:li:document:DRY_RUN"
 
 
 @dataclass(frozen=True)
@@ -299,6 +300,97 @@ class LinkedInWriteAPI:
             title=title,
         )
 
+    def plan_document_post(
+        self,
+        *,
+        text: str,
+        media_path: Union[str, Path],
+        visibility: str = "public",
+        title: Optional[str] = None,
+    ) -> PostPlan:
+        """Validate and build the official Posts API payload shape for one document post."""
+        path = Path(media_path).expanduser()
+        document_title = title.strip() if title and title.strip() else path.name
+        payload = self.publisher.build_document_payload(
+            text=text,
+            visibility=visibility,
+            document_urn=DRY_RUN_DOCUMENT_URN,
+            title=document_title,
+        )
+        return PostPlan(
+            command="post.document",
+            visibility=visibility,
+            text_length=len(_payload_commentary(payload)),
+            media_count=1,
+            api="linkedin.posts+documents",
+            author_urn=self.oauth.author_urn,
+            linkedin_version=self.oauth.linkedin_version,
+            payload=payload,
+            media_paths=(str(path),),
+        )
+
+    def create_document_post(
+        self,
+        *,
+        text: str,
+        media_path: Union[str, Path],
+        visibility: str = "public",
+        title: Optional[str] = None,
+    ) -> PublishResult:
+        """Upload one local document and publish it through official LinkedIn APIs."""
+        return self.publisher.post_document(
+            text=text,
+            visibility=visibility,
+            media_path=Path(media_path),
+            title=title,
+        )
+
+    def plan_poll_post(
+        self,
+        *,
+        text: str,
+        question: str,
+        options: tuple[str, ...],
+        duration: str,
+        visibility: str = "public",
+    ) -> PostPlan:
+        """Validate and build the official Posts API payload for a poll post."""
+        payload = self.publisher.build_poll_payload(
+            text=text,
+            visibility=visibility,
+            question=question,
+            options=options,
+            duration=duration,
+        )
+        return PostPlan(
+            command="post.poll",
+            visibility=visibility,
+            text_length=len(_payload_commentary(payload)),
+            media_count=0,
+            api="linkedin.posts+polls",
+            author_urn=self.oauth.author_urn,
+            linkedin_version=self.oauth.linkedin_version,
+            payload=payload,
+        )
+
+    def create_poll_post(
+        self,
+        *,
+        text: str,
+        question: str,
+        options: tuple[str, ...],
+        duration: str,
+        visibility: str = "public",
+    ) -> PublishResult:
+        """Publish a poll through official LinkedIn APIs."""
+        return self.publisher.post_poll(
+            text=text,
+            visibility=visibility,
+            question=question,
+            options=options,
+            duration=duration,
+        )
+
     def plan_delete_post(self, *, post_id: str) -> DeletePlan:
         """Validate and build the official Posts API delete target without deleting it."""
         normalized = self.publisher.normalize_delete_post_id(post_id)
@@ -470,6 +562,20 @@ class LinkedInWriteAPI:
             entity=entity,
             comment_id=comment_id,
             text=text,
+            actor_urn=actor_urn,
+        )
+
+    def delete_comment(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Delete a comment through LinkedIn's official Comments API."""
+        return self.publisher.delete_comment(
+            entity=entity,
+            comment_id=comment_id,
             actor_urn=actor_urn,
         )
 

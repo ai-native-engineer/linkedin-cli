@@ -66,7 +66,8 @@ from .serialization import posts_to_json, profile_to_dict, search_results_to_jso
 from .transport import LinkedInTransportError
 
 console = Console(stderr=True)
-REACTION_CHOICES = ["like", "celebrate", "support", "love", "insightful", "curious"]
+REACTION_CHOICES = ["like", "celebrate", "support", "love", "insightful", "curious", "funny"]
+POLL_DURATION_CHOICES = ["one-day", "three-days", "seven-days", "fourteen-days"]
 USER_ERROR_CODES = {
     "auth_missing",
     "auth_expired",
@@ -1455,6 +1456,260 @@ def post_video(
     console.print(build_status_panel("Video post created", True, f"id={result.post_id}\nurl={result.url}"))
 
 
+@post_group.command("document")
+@click.option("--text", "text_body", required=False, help="Post body text.")
+@click.option(
+    "--text-file",
+    type=str,
+    default=None,
+    help="Read post body text from a UTF-8 file, or '-' for stdin.",
+)
+@click.option("--document", "document_path", required=True, help="Local PDF, DOC, DOCX, PPT, or PPTX path.")
+@click.option("--title", type=str, default=None, help="Optional document title; defaults to the file name.")
+@click.option(
+    "--visibility",
+    type=click.Choice(["connections", "public"]),
+    default="public",
+    show_default=True,
+)
+@click.option("--dry-run", is_flag=True, help="Validate and print the planned official API request.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_document(
+    text_body: Optional[str],
+    text_file: Optional[str],
+    document_path: str,
+    title: Optional[str],
+    visibility: str,
+    dry_run: bool,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Publish one local document through LinkedIn's official Documents and Posts APIs."""
+    request = _contract_request(
+        visibility=visibility,
+        dry_run=dry_run,
+        media_count=1,
+        text_length=None,
+        title=title,
+        document=document_path,
+        author=author_urn,
+    )
+    try:
+        text_body = _resolve_post_text(text_body, text_file)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.document", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    request["text_length"] = len(text_body)
+    if dry_run:
+        try:
+            plan = LinkedInWriteAPI.for_dry_run(
+                author_urn=author_urn,
+                linkedin_version=linkedin_version,
+            ).plan_document_post(
+                text=text_body,
+                media_path=document_path,
+                visibility=visibility,
+                title=title,
+            )
+        except Exception as exc:
+            if as_json:
+                _handle_contract_error(command="post.document", source="official", request=request, exc=exc)
+            _handle_error(exc)
+        payload = envelope(
+            command="post.document",
+            source="official",
+            request=request,
+            data=post_create_dry_run_data(
+                text=text_body,
+                visibility=plan.visibility,
+                media_count=plan.media_count,
+                api=plan.api,
+                extra={"media_path": plan.media_paths[0], "title": plan.payload["content"]["media"]["title"]},
+            ),
+        )
+        if as_json:
+            _emit_contract(payload)
+            return
+        console.print(
+            build_status_panel(
+                "Document post dry-run OK",
+                True,
+                f"visibility={visibility} | text_length={len(text_body)} | api=linkedin.posts+documents",
+            )
+        )
+        return
+
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.create_document_post(
+                text=text_body,
+                visibility=visibility,
+                media_path=document_path,
+                title=title,
+            )
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.document", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.document",
+                source="official",
+                request=request,
+                data=post_text_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Document post created", True, f"id={result.post_id}\nurl={result.url}"))
+
+
+@post_group.command("poll")
+@click.option("--text", "text_body", required=False, help="Post body text.")
+@click.option(
+    "--text-file",
+    type=str,
+    default=None,
+    help="Read post body text from a UTF-8 file, or '-' for stdin.",
+)
+@click.option("--question", required=True, help="Poll question, up to 140 characters.")
+@click.option("--option", "options", multiple=True, required=True, help="Poll option; pass 2-4 times.")
+@click.option(
+    "--duration",
+    type=click.Choice(POLL_DURATION_CHOICES),
+    default="three-days",
+    show_default=True,
+)
+@click.option(
+    "--visibility",
+    type=click.Choice(["connections", "public"]),
+    default="public",
+    show_default=True,
+)
+@click.option("--dry-run", is_flag=True, help="Validate and print the planned official API request.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--author", "author_urn", type=str, default=None, help="Override the author URN.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def post_poll(
+    text_body: Optional[str],
+    text_file: Optional[str],
+    question: str,
+    options: tuple[str, ...],
+    duration: str,
+    visibility: str,
+    dry_run: bool,
+    as_json: bool,
+    author_urn: Optional[str],
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Publish a non-sponsored poll through LinkedIn's official Posts API."""
+    request = _contract_request(
+        visibility=visibility,
+        dry_run=dry_run,
+        media_count=0,
+        text_length=None,
+        question_length=len(question),
+        option_count=len(options),
+        duration=duration,
+        author=author_urn,
+    )
+    try:
+        text_body = _resolve_post_text(text_body, text_file)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.poll", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    request["text_length"] = len(text_body)
+    if dry_run:
+        try:
+            plan = LinkedInWriteAPI.for_dry_run(
+                author_urn=author_urn,
+                linkedin_version=linkedin_version,
+            ).plan_poll_post(
+                text=text_body,
+                question=question,
+                options=options,
+                duration=duration,
+                visibility=visibility,
+            )
+        except Exception as exc:
+            if as_json:
+                _handle_contract_error(command="post.poll", source="official", request=request, exc=exc)
+            _handle_error(exc)
+        payload = envelope(
+            command="post.poll",
+            source="official",
+            request=request,
+            data=post_create_dry_run_data(
+                text=text_body,
+                visibility=plan.visibility,
+                media_count=0,
+                api=plan.api,
+                extra={
+                    "question_length": len(plan.payload["content"]["poll"]["question"]),
+                    "option_count": len(plan.payload["content"]["poll"]["options"]),
+                    "duration": plan.payload["content"]["poll"]["settings"]["duration"],
+                },
+            ),
+        )
+        if as_json:
+            _emit_contract(payload)
+            return
+        console.print(
+            build_status_panel(
+                "Poll post dry-run OK",
+                True,
+                f"option_count={len(options)} | duration={plan.payload['content']['poll']['settings']['duration']}",
+            )
+        )
+        return
+
+    try:
+        with _write_api_from_options(
+            author_urn=author_urn,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.create_poll_post(
+                text=text_body,
+                visibility=visibility,
+                question=question,
+                options=options,
+                duration=duration,
+            )
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="post.poll", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="post.poll",
+                source="official",
+                request=request,
+                data=post_text_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Poll post created", True, f"id={result.post_id}\nurl={result.url}"))
+
+
 @post_group.command("article")
 @click.option("--text", "text_body", required=False, help="Post body text.")
 @click.option(
@@ -2233,6 +2488,48 @@ def comment_update(
         )
         return
     console.print(build_status_panel("Comment updated", True, f"id={comment_id}"))
+
+
+@comment_group.command("delete")
+@click.argument("entity")
+@click.argument("comment_id")
+@click.option("--actor", "actor_urn", type=str, default=None, help="Override actor person or organization URN.")
+@click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
+@click.option("--oauth-file", type=click.Path(dir_okay=False, path_type=str), default=None, help="OAuth token JSON file.")
+@click.option("--linkedin-version", type=str, default=None, help="LinkedIn version metadata override.")
+def comment_delete(
+    entity: str,
+    comment_id: str,
+    actor_urn: Optional[str],
+    as_json: bool,
+    oauth_file: Optional[str],
+    linkedin_version: Optional[str],
+) -> None:
+    """Delete a comment through the official LinkedIn Comments API."""
+    request = _contract_request(entity=entity, comment_id=comment_id, actor=actor_urn)
+    try:
+        with _write_api_from_options(
+            author_urn=None,
+            oauth_file=oauth_file,
+            linkedin_version=linkedin_version,
+        ) as api:
+            result = api.delete_comment(entity=entity, comment_id=comment_id, actor_urn=actor_urn)
+    except Exception as exc:
+        if as_json:
+            _handle_contract_error(command="comment.delete", source="official", request=request, exc=exc)
+        _handle_error(exc)
+
+    if as_json:
+        _emit_contract(
+            envelope(
+                command="comment.delete",
+                source="official",
+                request=request,
+                data=social_action_success_data(result),
+            )
+        )
+        return
+    console.print(build_status_panel("Comment deleted", True, f"id={comment_id}"))
 
 
 @comment_group.command("legacy", hidden=True)

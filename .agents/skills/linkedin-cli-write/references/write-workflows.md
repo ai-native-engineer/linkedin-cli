@@ -146,6 +146,8 @@ Use `--text-file <path>` for long posts. Use `--text-file -` only when the calle
 
 `post get` and `post list` may require `r_member_social` or `r_organization_social`; a token with only `w_member_social` may receive `permission_denied`.
 
+`comment.*`, `reaction.*`, and `social.*` may require `w_member_social_feed`, `r_member_social_feed`, `w_organization_social_feed`, or `r_organization_social_feed`; a token with only `w_member_social` may receive `permission_denied`.
+
 `post delete` accepts a `urn:li:share:*`, `urn:li:ugcPost:*`, numeric share id, or LinkedIn feed update URL. It rejects `urn:li:activity:*` because the official delete surface expects a post/share URN.
 
 ## Python Write API

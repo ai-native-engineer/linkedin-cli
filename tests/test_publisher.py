@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from linkedin_cli.oauth import OAuthConfig
+from linkedin_cli.publisher import DOCUMENTS_INITIALIZE_URL
 from linkedin_cli.publisher import IMAGES_INITIALIZE_URL
 from linkedin_cli.publisher import LinkedInPublishError
 from linkedin_cli.publisher import LinkedInPublisher
@@ -15,6 +16,7 @@ from linkedin_cli.publisher import SOCIAL_METADATA_URL
 from linkedin_cli.publisher import VIDEOS_FINALIZE_URL
 from linkedin_cli.publisher import VIDEOS_INITIALIZE_URL
 from linkedin_cli.publisher import normalize_reaction_type
+from linkedin_cli.publisher import normalize_poll_duration
 from linkedin_cli.publisher import normalize_social_entity_id
 from linkedin_cli.publisher import normalize_delete_post_id
 
@@ -278,6 +280,105 @@ def test_post_video_success(tmp_path) -> None:
     assert result.raw["request"]["media"] == {"video": "urn:li:video:abc"}
 
 
+def test_build_document_payload() -> None:
+    publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
+
+    payload = publisher.build_document_payload(
+        text=" document ",
+        visibility="public",
+        document_urn="urn:li:document:abc",
+        title="Example.pdf",
+    )
+
+    assert payload["commentary"] == "document"
+    assert payload["content"]["media"] == {
+        "id": "urn:li:document:abc",
+        "title": "Example.pdf",
+    }
+
+
+def test_post_document_success(tmp_path) -> None:
+    document_path = tmp_path / "deck.pdf"
+    document_path.write_bytes(b"pdf-bytes")
+    init_response = httpx.Response(
+        200,
+        json={
+            "value": {
+                "uploadUrl": "https://upload.example.test/document",
+                "document": "urn:li:document:abc",
+            }
+        },
+    )
+    post_response = httpx.Response(201, headers={"x-restli-id": "urn:li:share:document"})
+    client = FakeClient(init_response, post_response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.post_document(
+        text="hello document",
+        visibility="public",
+        media_path=document_path,
+        title="Deck",
+    )
+
+    assert result.post_id == "urn:li:share:document"
+    assert client.calls[0]["url"] == DOCUMENTS_INITIALIZE_URL
+    assert client.calls[0]["json"] == {
+        "initializeUploadRequest": {
+            "owner": "urn:li:person:abc",
+        }
+    }
+    assert client.put_calls[0]["url"] == "https://upload.example.test/document"
+    assert client.put_calls[0]["content"] == b"pdf-bytes"
+    assert client.put_calls[0]["headers"]["Authorization"] == "Bearer token-123"
+    assert client.put_calls[0]["headers"]["Content-Type"] == "application/pdf"
+    assert client.calls[1]["url"] == POSTS_URL
+    assert client.calls[1]["json"]["content"]["media"] == {
+        "id": "urn:li:document:abc",
+        "title": "Deck",
+    }
+    assert result.raw["request"]["media"] == {
+        "document": "urn:li:document:abc",
+        "title": "Deck",
+    }
+
+
+def test_build_poll_payload() -> None:
+    publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
+
+    payload = publisher.build_poll_payload(
+        text="vote",
+        visibility="public",
+        question="Pick one",
+        options=("Red", "Blue"),
+        duration="three-days",
+    )
+
+    assert payload["content"]["poll"] == {
+        "question": "Pick one",
+        "options": [{"text": "Red"}, {"text": "Blue"}],
+        "settings": {"duration": "THREE_DAYS"},
+    }
+
+
+def test_post_poll_success() -> None:
+    response = httpx.Response(201, headers={"x-restli-id": "urn:li:share:poll"})
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.post_poll(
+        text="vote",
+        visibility="public",
+        question="Pick one",
+        options=("Red", "Blue"),
+        duration="seven-days",
+    )
+
+    assert result.post_id == "urn:li:share:poll"
+    assert client.calls[0]["url"] == POSTS_URL
+    assert client.calls[0]["json"]["content"]["poll"]["settings"]["duration"] == "SEVEN_DAYS"
+    assert result.raw["request"]["media"]["poll"]["question"] == "Pick one"
+
+
 def test_build_article_payload() -> None:
     publisher = LinkedInPublisher(_oauth(), client=FakeClient(httpx.Response(201)))
 
@@ -415,6 +516,19 @@ def test_update_comment_success() -> None:
     assert client.calls[0]["json"] == {
         "patch": {"message": {"$set": {"text": "updated"}}}
     }
+
+
+def test_delete_comment_success() -> None:
+    client = FakeClient(httpx.Response(204))
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.delete_comment(entity="urn:li:ugcPost:123", comment_id="comment-1")
+
+    assert result.action == "comment.delete"
+    assert client.delete_calls[0]["url"] == (
+        f"{SOCIAL_ACTIONS_URL}/urn%3Ali%3AugcPost%3A123/comments/comment-1?"
+        "actor=urn%3Ali%3Aperson%3Aabc"
+    )
 
 
 def test_create_reaction_success() -> None:
@@ -569,6 +683,12 @@ def test_normalize_reaction_type_maps_ui_names() -> None:
     assert normalize_reaction_type("celebrate") == "PRAISE"
     assert normalize_reaction_type("support") == "APPRECIATION"
     assert normalize_reaction_type("funny") == "ENTERTAINMENT"
+
+
+def test_normalize_poll_duration_maps_ui_names() -> None:
+    assert normalize_poll_duration("one-day") == "ONE_DAY"
+    assert normalize_poll_duration("3d") == "THREE_DAYS"
+    assert normalize_poll_duration("two-weeks") == "FOURTEEN_DAYS"
 
 
 def test_post_image_rejects_unsupported_file_type(tmp_path) -> None:

@@ -41,10 +41,12 @@
 - LinkedIn Images + Posts API로 로컬 이미지 1개 게시
 - 로컬 이미지 2~20장 다중 이미지 게시
 - LinkedIn Videos + Posts API로 로컬 MP4 영상 1개 게시
+- LinkedIn Documents + Posts API로 PDF/DOC/DOCX/PPT/PPTX 문서 게시
+- Posts API로 non-sponsored poll 게시
 - article/link 게시
 - 기존 게시글 재공유
 - 게시글 commentary 수정
-- 공식 Comments API로 댓글 목록/조회/작성/수정
+- 공식 Comments API로 댓글 목록/조회/작성/수정/삭제
 - 공식 Reactions API로 반응 목록/조회/생성/삭제
 - 공식 Social Metadata API로 반응/댓글 요약 조회 및 댓글 open/closed 상태 수정
 - 토큰에 필요한 read 권한이 있을 때 단일 게시글 조회 및 author별 게시글 목록 조회
@@ -110,6 +112,8 @@ linkedin-cli post text --text "hello from linkedin-cli" --visibility public --js
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --dry-run --json
 linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --dry-run --json
+linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck" --dry-run --json
+linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --dry-run --json
 linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --dry-run --json
@@ -120,6 +124,7 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
 linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
 linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
 linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
 linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
@@ -136,6 +141,7 @@ linkedin-cli post text --text-file draft.md --visibility public --json
 ## 공식 OAuth 토큰 발급
 
 공식 `post.*` 명령은 LinkedIn Developer app과 `w_member_social` 권한이 있는 access token이 필요합니다.
+공식 `comment.*`, `reaction.*`, `social.*` 명령은 LinkedIn app/product 승인 상태에 따라 `w_member_social_feed`, `r_member_social_feed`, `w_organization_social_feed`, `r_organization_social_feed` 같은 추가 권한이 필요할 수 있습니다.
 
 ### 1. LinkedIn Developer app 만들기
 
@@ -165,6 +171,7 @@ LinkedIn Page가 없다면 새로 만들거나, 개인 개발자에게 허용되
 - `w_member_social`
 
 CLI는 `openid profile email`로 인증된 멤버를 식별하고, `w_member_social`로 해당 멤버의 게시글 생성/수정/삭제를 수행합니다.
+댓글/반응/소셜 메타데이터 명령은 LinkedIn의 Social Feed 권한이 있어야 성공합니다. 권한이 없으면 CLI는 `permission_denied` JSON envelope를 반환합니다.
 
 ### 3. Redirect URL 추가
 
@@ -264,6 +271,7 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 - 앱에 Share on LinkedIn / member social product가 활성화되어 있는지 확인합니다.
 - product/scope를 활성화한 뒤 `auth oauth-login`을 다시 실행합니다.
 - OAuth 동의 화면에 `w_member_social`이 표시되는지 확인합니다.
+- 댓글/반응/소셜 메타데이터 명령이면 `w_member_social_feed`/`r_member_social_feed` 또는 organization social feed 권한이 필요한지 확인합니다.
 
 `auth_expired`
 
@@ -276,6 +284,11 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 - LinkedIn Posts API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/posts-api
 - LinkedIn MultiImage Post API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/multiimage-post-api
 - LinkedIn Videos API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/videos-api
+- LinkedIn Documents API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/documents-api
+- LinkedIn Poll API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/poll-post-api
+- LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
+- LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
+- LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api
 
 ## 읽기 인증
 
@@ -334,6 +347,8 @@ linkedin-cli post text --text-file draft.md --visibility public --json
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --json
 linkedin-cli post video --text "hello video" --video clip.mp4 --title "Demo" --json
+linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck" --json
+linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --json
 linkedin-cli post article --text "read this" --url https://example.com/post --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --json
@@ -346,6 +361,7 @@ linkedin-cli comment list urn:li:ugcPost:1234567890 --json
 linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
 linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
 linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
 
 linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
 linkedin-cli reaction get urn:li:ugcPost:1234567890 --json

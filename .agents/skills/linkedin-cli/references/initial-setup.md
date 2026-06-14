@@ -107,7 +107,7 @@ uv run linkedin-cli post text --text-file post.md --visibility public --dry-run 
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 ```
 
-Image posts currently use one local JPG/GIF/PNG:
+Media posts support one local image, 2-20 local images, or one local MP4 video:
 
 ```bash
 uv run linkedin-cli post media --text-file post.md --media image.png --visibility public --dry-run --json
@@ -124,6 +124,16 @@ uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run 
 uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json
 uv run linkedin-cli post get urn:li:share:123 --json
 uv run linkedin-cli post list --count 10 --json
+```
+
+Official comment, reaction, and social metadata commands may need additional social feed permissions:
+
+```bash
+uv run linkedin-cli comment list urn:li:ugcPost:123 --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
+uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
+uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
 ```
 
 Post deletion accepts the id returned by `post text`/`post media`:

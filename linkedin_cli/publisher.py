@@ -18,17 +18,55 @@ REST_POSTS_URL = POSTS_URL
 IMAGES_INITIALIZE_URL = "https://api.linkedin.com/rest/images?action=initializeUpload"
 VIDEOS_INITIALIZE_URL = "https://api.linkedin.com/rest/videos?action=initializeUpload"
 VIDEOS_FINALIZE_URL = "https://api.linkedin.com/rest/videos?action=finalizeUpload"
+DOCUMENTS_INITIALIZE_URL = "https://api.linkedin.com/rest/documents?action=initializeUpload"
 SOCIAL_ACTIONS_URL = "https://api.linkedin.com/rest/socialActions"
 REACTIONS_URL = "https://api.linkedin.com/rest/reactions"
 SOCIAL_METADATA_URL = "https://api.linkedin.com/rest/socialMetadata"
 RESTLI_PROTOCOL_VERSION = "2.0.0"
 SUPPORTED_IMAGE_CONTENT_TYPES = {"image/gif", "image/jpeg", "image/png"}
 SUPPORTED_VIDEO_CONTENT_TYPES = {"video/mp4"}
+SUPPORTED_DOCUMENT_CONTENT_TYPES = {
+    "application/msword",
+    "application/pdf",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+DOCUMENT_CONTENT_TYPES_BY_SUFFIX = {
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".pdf": "application/pdf",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+MAX_DOCUMENT_SIZE_BYTES = 100 * 1024 * 1024
 MIN_MULTI_IMAGE_COUNT = 2
 MAX_MULTI_IMAGE_COUNT = 20
+MIN_POLL_OPTION_COUNT = 2
+MAX_POLL_OPTION_COUNT = 4
+MAX_POLL_QUESTION_LENGTH = 140
+MAX_POLL_OPTION_LENGTH = 30
 VISIBILITY_MAP = {
     "public": "PUBLIC",
     "connections": "CONNECTIONS",
+}
+POLL_DURATION_MAP = {
+    "one-day": "ONE_DAY",
+    "one_day": "ONE_DAY",
+    "1d": "ONE_DAY",
+    "three-days": "THREE_DAYS",
+    "three_days": "THREE_DAYS",
+    "3d": "THREE_DAYS",
+    "seven-days": "SEVEN_DAYS",
+    "seven_days": "SEVEN_DAYS",
+    "one-week": "SEVEN_DAYS",
+    "one_week": "SEVEN_DAYS",
+    "7d": "SEVEN_DAYS",
+    "fourteen-days": "FOURTEEN_DAYS",
+    "fourteen_days": "FOURTEEN_DAYS",
+    "two-weeks": "FOURTEEN_DAYS",
+    "two_weeks": "FOURTEEN_DAYS",
+    "14d": "FOURTEEN_DAYS",
 }
 REACTION_TYPE_MAP = {
     "like": "LIKE",
@@ -239,6 +277,51 @@ class LinkedInPublisher:
             content={"media": media},
         )
 
+    def build_document_payload(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        document_urn: str,
+        title: str,
+    ) -> dict[str, Any]:
+        """Build the official Posts API payload for a document post."""
+        document = document_urn.strip()
+        if not document:
+            raise LinkedInPublishError(
+                "Document URN cannot be empty.",
+                code="media_invalid",
+                retryable=False,
+            )
+        normalized_title = _normalize_document_title(title)
+        return self._build_rest_post_payload(
+            text=text,
+            visibility=visibility,
+            content={"media": {"title": normalized_title, "id": document}},
+        )
+
+    def build_poll_payload(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        question: str,
+        options: Sequence[str],
+        duration: str,
+    ) -> dict[str, Any]:
+        """Build the official Posts API payload for a poll post."""
+        normalized_options = _normalize_poll_options(options)
+        poll = {
+            "question": _normalize_poll_question(question),
+            "options": [{"text": option} for option in normalized_options],
+            "settings": {"duration": normalize_poll_duration(duration)},
+        }
+        return self._build_rest_post_payload(
+            text=text,
+            visibility=visibility,
+            content={"poll": poll},
+        )
+
     def build_article_payload(
         self,
         *,
@@ -397,6 +480,54 @@ class LinkedInPublisher:
             title=title,
         )
         return self._create_post(payload=payload, visibility=visibility, media={"video": video_urn})
+
+    def post_document(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        media_path: Path,
+        title: Optional[str] = None,
+    ) -> PublishResult:
+        """Upload one local document and publish it in a post."""
+        path = _existing_media_file(media_path)
+        content_type = _document_content_type(path)
+        document_urn = self._upload_document(path, content_type=content_type)
+        document_title = title.strip() if title and title.strip() else path.name
+        payload = self.build_document_payload(
+            text=text,
+            visibility=visibility,
+            document_urn=document_urn,
+            title=document_title,
+        )
+        return self._create_post(
+            payload=payload,
+            visibility=visibility,
+            media={"document": document_urn, "title": document_title},
+        )
+
+    def post_poll(
+        self,
+        *,
+        text: str,
+        visibility: str,
+        question: str,
+        options: Sequence[str],
+        duration: str,
+    ) -> PublishResult:
+        """Publish a poll through LinkedIn's official Posts API."""
+        payload = self.build_poll_payload(
+            text=text,
+            visibility=visibility,
+            question=question,
+            options=options,
+            duration=duration,
+        )
+        return self._create_post(
+            payload=payload,
+            visibility=visibility,
+            media={"poll": payload["content"]["poll"]},
+        )
 
     def post_article(
         self,
@@ -673,6 +804,37 @@ class LinkedInPublisher:
             entity_urn=entity_urn,
             completed_at=utc_now_iso(),
             raw=response,
+        )
+
+    def delete_comment(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        actor_urn: Optional[str] = None,
+    ) -> SocialActionResult:
+        """Delete a comment through LinkedIn's official Comments API."""
+        entity_urn = normalize_social_entity_id(entity)
+        comment = _normalize_non_empty(comment_id, label="Comment id")
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        url = _url_with_params(
+            f"{SOCIAL_ACTIONS_URL}/{quote(entity_urn, safe='')}/comments/{quote(comment, safe='')}",
+            params={"actor": actor},
+        )
+        self._delete(url, expected_statuses={204}, api_name="LinkedIn Comments API delete")
+        return SocialActionResult(
+            action="comment.delete",
+            entity_urn=entity_urn,
+            completed_at=utc_now_iso(),
+            raw={
+                "status_code": 204,
+                "request": {
+                    "api": "linkedin.comments.delete",
+                    "actor": actor,
+                    "entity": entity_urn,
+                    "comment_id": comment,
+                },
+            },
         )
 
     def list_reactions(
@@ -1076,6 +1238,83 @@ class LinkedInPublisher:
                 uploaded_part_ids.append(etag.strip('"'))
         return uploaded_part_ids
 
+    def _upload_document(self, path: Path, *, content_type: str) -> str:
+        file_size = path.stat().st_size
+        if file_size > MAX_DOCUMENT_SIZE_BYTES:
+            raise LinkedInPublishError(
+                "LinkedIn document uploads cannot exceed 100MB.",
+                code="media_invalid",
+                retryable=False,
+                details={"max_size_bytes": MAX_DOCUMENT_SIZE_BYTES, "size_bytes": file_size},
+            )
+        try:
+            init_response = self.client.post(
+                DOCUMENTS_INITIALIZE_URL,
+                headers=self._rest_headers(content_type="application/json"),
+                json={
+                    "initializeUploadRequest": {
+                        "owner": self.oauth.author_urn,
+                    }
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                "LinkedIn Documents API initialize upload request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"LinkedIn Documents API initialize upload request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if init_response.status_code != 200:
+            raise self._error_from_response(init_response, fallback_code="media_upload_failed")
+        try:
+            value = init_response.json().get("value", {})
+        except ValueError as exc:
+            raise LinkedInPublishError(
+                "LinkedIn Documents API returned invalid JSON.",
+                code="media_upload_failed",
+                retryable=True,
+                status_code=init_response.status_code,
+            ) from exc
+        upload_url = value.get("uploadUrl")
+        document_urn = value.get("document")
+        if not upload_url or not document_urn:
+            raise LinkedInPublishError(
+                "LinkedIn Documents API did not return uploadUrl and document URN.",
+                code="media_upload_failed",
+                retryable=True,
+                status_code=init_response.status_code,
+            )
+
+        try:
+            upload_response = self.client.put(
+                upload_url,
+                content=path.read_bytes(),
+                headers={
+                    "Authorization": f"Bearer {self.oauth.access_token}",
+                    "Content-Type": content_type,
+                },
+            )
+        except httpx.TimeoutException as exc:
+            raise LinkedInPublishError(
+                "LinkedIn document upload request timed out.",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise LinkedInPublishError(
+                f"LinkedIn document upload request failed: {exc}",
+                code="upstream_unavailable",
+                retryable=True,
+            ) from exc
+        if not 200 <= upload_response.status_code <= 299:
+            raise self._error_from_response(upload_response, fallback_code="media_upload_failed")
+        return str(document_urn)
+
     def _get(
         self,
         url: str,
@@ -1154,11 +1393,15 @@ class LinkedInPublisher:
             ) from exc
         if response.status_code not in expected_statuses:
             raise self._error_from_response(response)
+        restli_id = response.headers.get("x-restli-id") or response.headers.get("x-resourceidentity-urn")
         if response.status_code == 204 or not response.content:
-            return {
+            result = {
                 "status_code": response.status_code,
                 "request": {"url": request_url, "payload": payload},
             }
+            if restli_id:
+                result["headers"] = {"x-restli-id": restli_id}
+            return result
         try:
             parsed = response.json()
         except ValueError as exc:
@@ -1176,7 +1419,6 @@ class LinkedInPublisher:
                 status_code=response.status_code,
             )
         parsed.setdefault("status_code", response.status_code)
-        restli_id = response.headers.get("x-restli-id") or response.headers.get("x-resourceidentity-urn")
         if restli_id:
             parsed.setdefault("headers", {})["x-restli-id"] = restli_id
         return parsed
@@ -1333,6 +1575,22 @@ def _video_content_type(path: Path) -> str:
     return content_type
 
 
+def _document_content_type(path: Path) -> str:
+    suffix = path.suffix.lower()
+    content_type = mimetypes.guess_type(path.name)[0] or DOCUMENT_CONTENT_TYPES_BY_SUFFIX.get(suffix)
+    if content_type not in SUPPORTED_DOCUMENT_CONTENT_TYPES:
+        raise LinkedInPublishError(
+            f"Unsupported document type for LinkedIn upload: {path.name}",
+            code="media_invalid",
+            retryable=False,
+            details={
+                "supported_extensions": sorted(DOCUMENT_CONTENT_TYPES_BY_SUFFIX),
+                "supported_content_types": sorted(SUPPORTED_DOCUMENT_CONTENT_TYPES),
+            },
+        )
+    return content_type
+
+
 def _validate_multi_image_count(count: int) -> None:
     if count < MIN_MULTI_IMAGE_COUNT or count > MAX_MULTI_IMAGE_COUNT:
         raise LinkedInPublishError(
@@ -1404,6 +1662,54 @@ def _normalize_non_empty(value: str, *, label: str) -> str:
     return normalized
 
 
+def _normalize_document_title(value: str) -> str:
+    title = _normalize_non_empty(value, label="Document title")
+    if len(title) > 255:
+        raise LinkedInPublishError(
+            "Document title cannot exceed 255 characters.",
+            code="media_invalid",
+            retryable=False,
+            details={"max_length": 255, "length": len(title)},
+        )
+    return title
+
+
+def _normalize_poll_question(value: str) -> str:
+    question = _normalize_non_empty(value, label="Poll question")
+    if len(question) > MAX_POLL_QUESTION_LENGTH:
+        raise LinkedInPublishError(
+            "Poll question cannot exceed 140 characters.",
+            code="invalid_request",
+            retryable=False,
+            details={"max_length": MAX_POLL_QUESTION_LENGTH, "length": len(question)},
+        )
+    return question
+
+
+def _normalize_poll_options(options: Sequence[str]) -> list[str]:
+    values = [_normalize_non_empty(option, label="Poll option") for option in options]
+    if len(values) < MIN_POLL_OPTION_COUNT or len(values) > MAX_POLL_OPTION_COUNT:
+        raise LinkedInPublishError(
+            "LinkedIn polls require between 2 and 4 options.",
+            code="invalid_request",
+            retryable=False,
+            details={
+                "option_count": len(values),
+                "min_option_count": MIN_POLL_OPTION_COUNT,
+                "max_option_count": MAX_POLL_OPTION_COUNT,
+            },
+        )
+    too_long = [value for value in values if len(value) > MAX_POLL_OPTION_LENGTH]
+    if too_long:
+        raise LinkedInPublishError(
+            "Poll options cannot exceed 30 characters.",
+            code="invalid_request",
+            retryable=False,
+            details={"max_length": MAX_POLL_OPTION_LENGTH},
+        )
+    return values
+
+
 def _normalize_actor_urn(value: str) -> str:
     actor = _normalize_non_empty(value, label="Actor URN")
     if actor.startswith(("urn:li:person:", "urn:li:organization:")):
@@ -1413,6 +1719,22 @@ def _normalize_actor_urn(value: str) -> str:
         code="invalid_request",
         retryable=False,
         details={"accepted_prefixes": ["urn:li:person:", "urn:li:organization:"]},
+    )
+
+
+def normalize_poll_duration(value: str) -> str:
+    normalized = _normalize_non_empty(value, label="Poll duration").lower()
+    api_value = POLL_DURATION_MAP.get(normalized)
+    if api_value:
+        return api_value
+    upper_value = normalized.upper()
+    if upper_value in set(POLL_DURATION_MAP.values()):
+        return upper_value
+    raise LinkedInPublishError(
+        f"Unsupported poll duration: {value}",
+        code="invalid_request",
+        retryable=False,
+        details={"supported_durations": sorted(POLL_DURATION_MAP)},
     )
 
 
