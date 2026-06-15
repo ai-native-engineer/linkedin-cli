@@ -194,7 +194,7 @@ def inspect_auth_session(session: AuthSession, config: AppConfig) -> dict[str, A
         return {
             "ok": False,
             "kind": exc.details.reason,
-            "error": str(exc),
+            "error": _sanitize_error(exc),
             "status_code": exc.details.status_code,
             "location": exc.details.location,
             "url": exc.details.url,
@@ -203,13 +203,13 @@ def inspect_auth_session(session: AuthSession, config: AppConfig) -> dict[str, A
         return {
             "ok": False,
             "kind": "transport-error",
-            "error": str(exc),
+            "error": _sanitize_error(exc),
         }
     except Exception as exc:  # pragma: no cover - depends on live cookies/network
         return {
             "ok": False,
             "kind": exc.__class__.__name__.replace("_", "-").lower(),
-            "error": str(exc),
+            "error": _sanitize_error(exc),
         }
     if not isinstance(payload, dict) or not payload:
         return {
@@ -259,7 +259,7 @@ def probe_read_access(
             results[name] = {
                 "ok": False,
                 "kind": exc.__class__.__name__.replace("_", "-").lower(),
-                "error": str(exc),
+                "error": _sanitize_error(exc),
             }
     if public_id:
         try:
@@ -268,7 +268,7 @@ def probe_read_access(
             results["voyager_profile"] = {
                 "ok": False,
                 "kind": exc.__class__.__name__.replace("_", "-").lower(),
-                "error": str(exc),
+                "error": _sanitize_error(exc),
             }
     return results
 
@@ -349,6 +349,15 @@ def _build_auth_hint(
     )
 
 
+def _sanitize_error(exc: Exception) -> str:
+    """Stringify an exception without leaking cookie values into diagnostics or logs."""
+    text = str(exc)
+    lowered = text.lower()
+    if "li_at=" in lowered or "jsessionid=" in lowered or "linkedin_cookie_header" in lowered:
+        return f"{exc.__class__.__name__}: request failed (cookie header redacted)"
+    return text
+
+
 def _load_from_cookie_header(config: AppConfig) -> AuthSession | None:
     raw_header = os.getenv(ENV_COOKIE_HEADER, "").strip()
     if not raw_header:
@@ -405,12 +414,16 @@ def _read_cookie_header_file(path: Path) -> str:
     text = path.read_text(encoding="utf-8").strip()
     if not text:
         return ""
-    if not summarize_cookie_header(text)["required_missing"]:
-        return text
+    # Prefer an explicit LINKEDIN_COOKIE_HEADER= assignment (the format write_cookie_header_file
+    # produces). Checking this before the raw-text branch avoids returning the whole file —
+    # comment line + assignment wrapper — which would become an invalid multi-line Cookie header.
     for line in text.splitlines():
         value = _extract_cookie_header_assignment(line)
         if value and not summarize_cookie_header(value)["required_missing"]:
             return value
+    # Fall back to a single-line raw Cookie header (no comments or assignment wrapping).
+    if "\n" not in text and not summarize_cookie_header(text)["required_missing"]:
+        return text
     return ""
 
 

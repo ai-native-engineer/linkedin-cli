@@ -2610,3 +2610,32 @@ def test_normalize_jsessionid_quotes_unquoted_value() -> None:
 
     assert _normalize_jsessionid("ajax:123") == '"ajax:123"'
     assert _normalize_jsessionid('"ajax:123"') == '"ajax:123"'  # idempotent
+
+
+def test_cookie_file_roundtrip_full_header(tmp_path) -> None:
+    from linkedin_cli.auth import _read_cookie_header_file, write_cookie_header_file
+
+    # A realistic full jar (many cookies) must round-trip to a single-line Cookie header,
+    # not the whole file (comment + LINKEDIN_COOKIE_HEADER= wrapper) which breaks transport.
+    header = "; ".join(
+        [f"c{i}=v{i}" for i in range(40)] + ["li_at=AQED_token", 'JSESSIONID="ajax:123"']
+    )
+    path = tmp_path / "cookies.env"
+    write_cookie_header_file(path, header)
+    restored = _read_cookie_header_file(path)
+
+    assert "\n" not in restored  # single-line, valid as a Cookie header
+    assert "LINKEDIN_COOKIE_HEADER" not in restored  # not the wrapper/comment lines
+    assert "li_at=AQED_token" in restored
+    assert 'JSESSIONID="ajax:123"' in restored
+
+
+def test_sanitize_error_redacts_cookie_values() -> None:
+    from linkedin_cli.auth import _sanitize_error
+
+    leaky = ValueError("Invalid header value b'li_at=SECRET; JSESSIONID=ajax:1'")
+    out = _sanitize_error(leaky)
+    assert "SECRET" not in out
+    assert "li_at=" not in out
+    assert "ValueError" in out
+    assert _sanitize_error(RuntimeError("network timeout")) == "network timeout"
