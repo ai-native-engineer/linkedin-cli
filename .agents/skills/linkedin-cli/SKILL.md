@@ -13,7 +13,7 @@ Use this project-local skill for LinkedIn setup, auth, read workflows, official 
 
 ## Boundaries
 
-- Run commands from the repository root with `uv run linkedin-cli ...`. If the user needs the bare `linkedin-cli` command and `command -v linkedin-cli` is empty, run `bash scripts/ensure-cli.sh` to install `agent-linkedin` (see `references/initial-setup.md`).
+- Command form: use bare `linkedin-cli` when it is on PATH (Claude plugin, `uv tool install`, or PyPI install); use `uv run linkedin-cli` from a repo clone. The examples below use `uv run linkedin-cli` — drop the `uv run` prefix when `linkedin-cli` is already installed. The skill ships as a Claude plugin (`.claude-plugin/plugin.json`) and is mirrored to `skills/`, `.claude/skills/`, and `.codex/skills/`.
 - Treat `read.*` as unofficial: it uses the user's own LinkedIn web session.
 - Treat `post.*`, `comment.*`, `reaction.*`, and `social.*` as official: they use LinkedIn REST APIs with OAuth. Comments, reactions, and social metadata may require Social Feed permissions beyond `w_member_social`.
 - Never print cookies, access tokens, client secrets, passwords, or browser storage-state contents.
@@ -23,8 +23,8 @@ Use this project-local skill for LinkedIn setup, auth, read workflows, official 
 
 ## Standard Workflow
 
-1. If the user is setting up the CLI, read `references/initial-setup.md`.
-2. If the CLI already exists, start with `uv run linkedin-cli auth-status`.
+1. Ensure the CLI is available: run `command -v linkedin-cli`. If it prints a path, use bare `linkedin-cli`. If empty and you are in the repo, use `uv run linkedin-cli`. If empty with no repo (plugin path), run the `scripts/ensure-cli.sh` in this skill's own directory to install `agent-linkedin` (needs `uv` or `pipx`), then use bare `linkedin-cli`. For first-time setup read `references/initial-setup.md`.
+2. Verify the session with `linkedin-cli auth-status` before reads; capture cookies first with `linkedin-cli auth login` if it is degraded.
 3. Choose the narrowest command that answers the request.
 4. Prefer canonical `linkedin-cli read ... --json` for agent, Skim, or script consumption.
 5. For auth/session failures, read `references/auth-troubleshooting.md`.
@@ -34,11 +34,20 @@ Use this project-local skill for LinkedIn setup, auth, read workflows, official 
 
 ## Setup Quick Start
 
+Plugin path (no clone) — install the CLI, then capture cookies:
+
+```bash
+bash scripts/ensure-cli.sh   # in this skill's directory; installs agent-linkedin if missing (needs uv or pipx)
+linkedin-cli auth login      # auto-capture cookies from a logged-in browser; prints DevTools steps on failure
+linkedin-cli auth-status
+```
+
+Clone path (development):
+
 ```bash
 cd linkedin-cli
 uv sync --extra dev
-uv run linkedin-cli --help
-uv run linkedin-cli auth status --json
+uv run linkedin-cli auth login
 uv run linkedin-cli auth-status
 ```
 
@@ -66,8 +75,8 @@ uv run linkedin-cli auth permission-check --json
 | Read saved posts as SNS contract JSON | `uv run linkedin-cli read saved --limit 10 --json` |
 | Dry-run unsave one saved activity | `uv run linkedin-cli saved unsave urn:li:activity:123 --dry-run --json` |
 | Search people and posts | `uv run linkedin-cli read search "AI engineer" --limit 10 --json` |
-| Fetch one profile | `uv run linkedin-cli read profile seungwon-aiden --json` |
-| Fetch recent posts from a profile | `uv run linkedin-cli read profile-posts seungwon-aiden --limit 10 --json` |
+| Fetch one profile | `uv run linkedin-cli read profile your-handle --json` |
+| Fetch recent posts from a profile | `uv run linkedin-cli read profile-posts your-handle --limit 10 --json` |
 | Inspect one activity | `uv run linkedin-cli read activity urn:li:activity:123 --json` |
 | Read activity comments | `uv run linkedin-cli read comments urn:li:activity:123 --limit 20 --json` |
 | Read activity reactions | `uv run linkedin-cli read reactions urn:li:activity:123 --limit 20 --json` |
@@ -111,7 +120,7 @@ uv run linkedin-cli auth permission-check --json
 
 ## Identifier Rules
 
-- Pass a profile public identifier like `seungwon-aiden` or a full LinkedIn profile URL to `profile` and `profile-posts`.
+- Pass a profile public identifier like `your-handle` or a full LinkedIn profile URL to `profile` and `profile-posts`.
 - Pass a full activity URN, a numeric activity id, or a LinkedIn activity URL to `activity` and write-side commands.
 - Normalize to `--json` before downstream processing when the request involves filtering, summarizing, or saving structured output.
 

@@ -88,6 +88,8 @@ uv run playwright install chromium
 
 ## 빠른 시작
 
+> 아래 예시는 설치된 `linkedin-cli` 기준입니다. clone에서 개발 중이면 각 명령 앞에 `uv run`을 붙이거나(`uv run linkedin-cli ...`), `uv tool install .`로 전역 설치하세요.
+
 CLI 확인:
 
 ```bash
@@ -101,7 +103,7 @@ linkedin-cli auth login
 linkedin-cli auth-status
 ```
 
-`auth login`은 로그인된 브라우저(Chrome·Brave·Edge·Firefox)에서 쿠키를 추출해 private file(`~/.config/linkedin/cookies.env`, 권한 `600`)에 저장하고 세션을 검증합니다. 자동 추출이 실패하면 DevTools로 직접 복사하는 단계를 출력합니다 — [읽기 인증](#읽기-인증) 참고.
+`auth login`은 로그인된 브라우저(Chrome·Chromium·Brave·Edge·Firefox)에서 쿠키를 추출해 private file(`~/.config/linkedin/cookies.env`, 권한 `600`)에 저장하고 세션을 검증합니다. 자동 추출이 실패하면 DevTools로 직접 복사하는 단계를 출력합니다 — [읽기 인증](#읽기-인증) 참고.
 
 공식 OAuth 권한을 mutation 없이 점검:
 
@@ -115,8 +117,8 @@ linkedin-cli auth permission-check --post-id urn:li:ugcPost:1234567890 --json
 ```bash
 linkedin-cli read feed --limit 10 --json
 linkedin-cli read saved --limit 10 --json
-linkedin-cli read profile seungwon-aiden --json
-linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read profile your-handle --json
+linkedin-cli read profile-posts your-handle --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
@@ -390,8 +392,8 @@ linkedin-cli auth oauth-login
 
 linkedin-cli read feed --limit 20 --json
 linkedin-cli read saved --limit 20 --json
-linkedin-cli read profile seungwon-aiden --json
-linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read profile your-handle --json
+linkedin-cli read profile-posts your-handle --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
@@ -443,8 +445,8 @@ Legacy 호환 명령:
 ```bash
 linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
-linkedin-cli profile seungwon-aiden --json --output tmp/linkedin-profile.json
-linkedin-cli profile-posts seungwon-aiden --max 20
+linkedin-cli profile your-handle --json --output tmp/linkedin-profile.json
+linkedin-cli profile-posts your-handle --max 20
 linkedin-cli activity urn:li:activity:123 --json --output tmp/linkedin-activity.json
 linkedin-cli post "hello from browser fallback"
 linkedin-cli react urn:li:activity:123 --type like
@@ -501,7 +503,7 @@ print(delete_result.deleted_at)
 
 ## Skills
 
-이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`, `.claude/skills/`, `.codex/skills/`는 이 skill로 연결된 project-local 심볼릭 링크입니다. 플러그인으로도 같은 skill을 설치할 수 있습니다([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). 플러그인은 skill만 제공하므로, skill을 처음 쓸 때 `linkedin-cli` 명령이 없으면 [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh)가 `agent-linkedin`을 자동 설치합니다. 그 뒤 `auth login` → `auth-status`로 read 인증을 확인합니다.
+이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`, `.claude/skills/`, `.codex/skills/`는 이 skill로 연결된 project-local 심볼릭 링크입니다. 플러그인으로도 같은 skill을 설치할 수 있습니다([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). 플러그인은 skill만 제공하므로, skill을 처음 쓸 때 `linkedin-cli` 명령이 없으면 [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh)가 `agent-linkedin`을 자동 설치합니다(`uv` 또는 `pipx`가 먼저 설치돼 있어야 합니다). 그 뒤 `auth login` → `auth-status`로 read 인증을 확인합니다.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — 첫 셋업과 OAuth/쿠키 인증

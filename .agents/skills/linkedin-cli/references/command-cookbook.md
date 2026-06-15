@@ -59,7 +59,14 @@ uv sync --extra dev
 uv run linkedin-cli --help
 ```
 
-Save a full LinkedIn read-session Cookie header without printing it:
+Capture the read-session cookies automatically from a logged-in browser (recommended):
+
+```bash
+uv run linkedin-cli auth login
+uv run linkedin-cli auth-status
+```
+
+If automatic capture fails, save a full Cookie header manually without printing it:
 
 ```bash
 uv run linkedin-cli auth cookie-file --from-stdin
@@ -117,16 +124,16 @@ uv run linkedin-cli read search "AI engineer" --limit 10 --json --output tmp/sea
 Fetch a profile by public identifier or URL:
 
 ```bash
-uv run linkedin-cli read profile seungwon-aiden
-uv run linkedin-cli read profile https://www.linkedin.com/in/seungwon-aiden/ --json
+uv run linkedin-cli read profile your-handle
+uv run linkedin-cli read profile https://www.linkedin.com/in/your-handle/ --json
 ```
 
 Fetch posts from a profile:
 
 ```bash
-uv run linkedin profile-posts seungwon-aiden --max 10
-uv run linkedin profile-posts seungwon-aiden --max 10 --json
-uv run linkedin profile-posts seungwon-aiden --max 10 --json --output tmp/posts.json
+uv run linkedin profile-posts your-handle --max 10
+uv run linkedin profile-posts your-handle --max 10 --json
+uv run linkedin profile-posts your-handle --max 10 --json --output tmp/posts.json
 ```
 
 Inspect one activity:
@@ -297,8 +304,8 @@ Do not assume legacy `profile` or `activity` support `--output`; use canonical `
 
 Profile commands accept:
 
-- a public id like `seungwon-aiden`
-- a full profile URL like `https://www.linkedin.com/in/seungwon-aiden/`
+- a public id like `your-handle`
+- a full profile URL like `https://www.linkedin.com/in/your-handle/`
 
 Activity-aware commands accept:
 
@@ -358,8 +365,8 @@ uv run linkedin-cli post delete urn:li:share:7323456789012345678 --json
 Inspect a profile and then fetch their last 5 posts:
 
 ```bash
-uv run linkedin-cli read profile seungwon-aiden --json
-uv run linkedin profile-posts seungwon-aiden --max 5 --json
+uv run linkedin-cli read profile your-handle --json
+uv run linkedin profile-posts your-handle --max 5 --json
 ```
 
 Search a company name and persist results:

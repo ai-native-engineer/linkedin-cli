@@ -88,6 +88,8 @@ uv run playwright install chromium
 
 ## Quick Start
 
+> The examples below assume `linkedin-cli` is installed. If you are developing from a clone, prefix each command with `uv run` (`uv run linkedin-cli ...`), or run `uv tool install .` to put it on PATH.
+
 Check the CLI:
 
 ```bash
@@ -101,7 +103,7 @@ linkedin-cli auth login
 linkedin-cli auth-status
 ```
 
-`auth login` extracts cookies from a logged-in browser (Chrome, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication).
+`auth login` extracts cookies from a logged-in browser (Chrome, Chromium, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication).
 
 Check official OAuth permissions without mutating LinkedIn:
 
@@ -115,8 +117,8 @@ Then run read commands:
 ```bash
 linkedin-cli read feed --limit 10 --json
 linkedin-cli read saved --limit 10 --json
-linkedin-cli read profile seungwon-aiden --json
-linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read profile your-handle --json
+linkedin-cli read profile-posts your-handle --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
@@ -390,8 +392,8 @@ linkedin-cli auth oauth-login
 
 linkedin-cli read feed --limit 20 --json
 linkedin-cli read saved --limit 20 --json
-linkedin-cli read profile seungwon-aiden --json
-linkedin-cli read profile-posts seungwon-aiden --limit 5 --json
+linkedin-cli read profile your-handle --json
+linkedin-cli read profile-posts your-handle --limit 5 --json
 linkedin-cli read activity urn:li:activity:1234567890 --json
 linkedin-cli read comments urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
@@ -443,8 +445,8 @@ Legacy compatibility commands:
 ```bash
 linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
-linkedin-cli profile seungwon-aiden --json --output tmp/linkedin-profile.json
-linkedin-cli profile-posts seungwon-aiden --max 20
+linkedin-cli profile your-handle --json --output tmp/linkedin-profile.json
+linkedin-cli profile-posts your-handle --max 20
 linkedin-cli activity urn:li:activity:123 --json --output tmp/linkedin-activity.json
 linkedin-cli post "hello from browser fallback"
 linkedin-cli react urn:li:activity:123 --type like
@@ -501,7 +503,7 @@ print(delete_result.deleted_at)
 
 ## Skills
 
-This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/`, `.claude/skills/`, and `.codex/skills/` are project-local symlinks that point at it. The same skill also installs as a Claude plugin ([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). The plugin ships only the skill, so when the skill runs and `linkedin-cli` is missing, [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh) installs `agent-linkedin` for you; then `auth login` → `auth-status` confirms read auth.
+This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/`, `.claude/skills/`, and `.codex/skills/` are project-local symlinks that point at it. The same skill also installs as a Claude plugin ([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). The plugin ships only the skill, so when the skill runs and `linkedin-cli` is missing, [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh) installs `agent-linkedin` for you (requires `uv` or `pipx` installed first); then `auth login` → `auth-status` confirms read auth.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — first-time setup and OAuth/cookie auth

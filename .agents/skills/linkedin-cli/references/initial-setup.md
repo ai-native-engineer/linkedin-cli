@@ -21,7 +21,7 @@ uv sync --extra dev
 uv run linkedin-cli --help
 ```
 
-**As a global command (skill/plugin users):** when `command -v linkedin-cli` is empty, the skill installs the CLI for you. You can also run the installer directly — it is idempotent and never uses sudo:
+**As a global command (skill/plugin users):** when `command -v linkedin-cli` is empty, the skill installs the CLI for you. You can also run the installer directly — it is idempotent and never uses sudo, but it needs `uv` or `pipx` already installed. Run the `scripts/ensure-cli.sh` that ships in the skill's own directory (from a clone, that path is `.agents/skills/linkedin-cli/scripts/ensure-cli.sh`):
 
 ```bash
 bash .agents/skills/linkedin-cli/scripts/ensure-cli.sh
@@ -38,14 +38,14 @@ uv run playwright install chromium
 
 Read commands are unofficial and use the user's own LinkedIn web session.
 
-Start with a non-mutating status check:
+Capture cookies automatically from a logged-in browser, then verify:
 
 ```bash
-uv run linkedin-cli auth status --json
+uv run linkedin-cli auth login
 uv run linkedin-cli auth-status
 ```
 
-If cookie auth is missing or degraded, prefer a full Cookie header saved to the private default file. Run the command, paste the full `Cookie` request header from a logged-in browser, then press `Ctrl-D`:
+`auth login` extracts the session and writes `~/.config/linkedin/cookies.env` (mode `600`) without printing values. If automatic extraction fails (on macOS, Chrome/Brave/Edge may prompt for Keychain access — `--browser firefox` is the most reliable), it prints DevTools steps to capture the cookie manually and save it with `auth cookie-file --from-stdin` (paste the full `Cookie` request header, then `Ctrl-D`):
 
 ```bash
 uv run linkedin-cli auth cookie-file --from-stdin
