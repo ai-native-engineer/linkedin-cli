@@ -17,6 +17,8 @@ from .auth import validate_auth_session
 from .browser import BrowserActionError, LinkedInBrowserFallback
 from .config import AppConfig
 from .models import Actor, Comment, EngagementMetrics, Post, Profile, ReactionSummary, SearchResult
+from .structmatch import extract_activity_id
+from .structmatch import find_first_key
 from .transport import LinkedInTransportError
 from .transport import LinkedInVoyagerTransport
 
@@ -116,7 +118,7 @@ class LinkedInClient:
             raise LinkedInClientError(
                 f"Activity lookup requires an activity URN; got {activity_urn}."
             )
-        activity_id = activity_urn.split(":")[-1]
+        activity_id = self._require_activity_id(activity_urn)
 
         def run() -> Post:
             comments = self.api.get_post_comments(activity_id, comment_count=20)
@@ -147,7 +149,7 @@ class LinkedInClient:
             raise LinkedInClientError(
                 f"Comment lookup requires an activity URN; got {activity_urn}."
             )
-        activity_id = activity_urn.split(":")[-1]
+        activity_id = self._require_activity_id(activity_urn)
         count = self._resolve_limit(limit)
 
         def run() -> list[Comment]:
@@ -184,7 +186,7 @@ class LinkedInClient:
             raise LinkedInClientError(
                 f"Reactions require an activity URN; got {activity_urn}."
             )
-        activity_id = activity_urn.split(":")[-1]
+        activity_id = self._require_activity_id(activity_urn)
         normalized = REACTION_TYPE_MAP.get(reaction_type.lower())
         if not normalized:
             raise LinkedInClientError(f"Unsupported reaction type: {reaction_type}")
@@ -218,8 +220,19 @@ class LinkedInClient:
     def activity_url(self, activity_urn: str) -> str:
         if activity_urn.startswith("urn:li:"):
             return f"https://www.linkedin.com/feed/update/{activity_urn}/"
-        activity_id = activity_urn.split(":")[-1]
+        activity_id = extract_activity_id(activity_urn) or activity_urn.split(":")[-1]
         return f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}/"
+
+    def _require_activity_id(self, activity_urn: str) -> str:
+        """Pull the numeric activity id with a guarded regex instead of a naive
+        ``split(':')[-1]`` so a compound URN cannot silently mis-target a read or a
+        reaction write; fail loudly on garbage."""
+        activity_id = extract_activity_id(activity_urn)
+        if activity_id is None:
+            raise LinkedInClientError(
+                f"Could not extract an activity id from {activity_urn}."
+            )
+        return activity_id
 
     def normalize_profile_id(self, identifier: str) -> str:
         text = identifier.strip()
@@ -333,9 +346,15 @@ class LinkedInClient:
         url = self._extract_first(raw, "url")
         urn = self._extract_first(raw, "entityUrn", "entity_urn", "urn") or self._urn_from_url(url or "")
         text = self._extract_text(raw.get("commentary")) or self._extract_first(raw, "content", "text")
-        reactions_total = self._extract_count(raw, "reactionCount", "socialDetail.totalSocialActivityCounts.numLikes")
-        comments_total = self._extract_count(raw, "commentCount", "socialDetail.totalSocialActivityCounts.numComments")
-        reposts_total = self._extract_count(raw, "shareCount", "socialDetail.totalSocialActivityCounts.numShares")
+        reactions_total = self._extract_count(
+            raw, "reactionCount", "socialDetail.totalSocialActivityCounts.numLikes", leaves=("numLikes",)
+        )
+        comments_total = self._extract_count(
+            raw, "commentCount", "socialDetail.totalSocialActivityCounts.numComments", leaves=("numComments",)
+        )
+        reposts_total = self._extract_count(
+            raw, "shareCount", "socialDetail.totalSocialActivityCounts.numShares", leaves=("numShares",)
+        )
         return Post(
             urn=urn or "",
             author=Actor(
@@ -497,9 +516,20 @@ class LinkedInClient:
             metadata=raw,
         )
 
-    def _extract_count(self, raw: Any, *paths: str) -> Optional[int]:
+    def _extract_count(self, raw: Any, *paths: str, leaves: tuple[str, ...] = ()) -> Optional[int]:
         for path in paths:
             value = self._extract_first(raw, path)
+            if value in (None, ""):
+                continue
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                continue
+        # Only when every explicit path misses: depth-capped leaf search, so a
+        # counter LinkedIn relocates under a renamed parent still resolves instead
+        # of silently reporting 0. Happy-path values never reach this loop.
+        for leaf in leaves:
+            value = find_first_key(raw, leaf, max_depth=5)
             if value in (None, ""):
                 continue
             try:

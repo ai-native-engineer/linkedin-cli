@@ -25,25 +25,47 @@ Browser fallback flows use Playwright. If a command asks for a browser binary, i
 uv run playwright install chromium
 ```
 
-## 3. Verify Read Auth
+## 3. Set Up And Verify Read Auth
 
 Read commands are unofficial and use the user's own LinkedIn web session.
 
-Start with:
+Start with a non-mutating status check:
 
 ```bash
+uv run linkedin-cli auth status --json
 uv run linkedin-cli auth-status
 ```
 
-If cookie auth is missing or degraded, use one of these:
+If cookie auth is missing or degraded, prefer a full Cookie header saved to the private default file. Run the command, paste the full `Cookie` request header from a logged-in browser, then press `Ctrl-D`:
+
+```bash
+uv run linkedin-cli auth cookie-file --from-stdin
+uv run linkedin-cli auth-status
+```
+
+The command writes `~/.config/linkedin/cookies.env` with `600` permissions and never prints cookie values. Override the path only when needed:
+
+```bash
+uv run linkedin-cli auth cookie-file --path ~/.config/linkedin/work.cookies.env --from-stdin
+LINKEDIN_COOKIE_FILE=~/.config/linkedin/work.cookies.env uv run linkedin-cli auth-status
+```
+
+One-shot environment fallback:
 
 ```bash
 export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; ...'
-export LINKEDIN_LI_AT='...'
-export LINKEDIN_JSESSIONID='"ajax:..."'
+uv run linkedin-cli auth-status
 ```
 
-Prefer the full `LINKEDIN_COOKIE_HEADER` when feed/profile probes redirect or return authwall/checkpoint behavior.
+Minimal environment fallback:
+
+```bash
+export LINKEDIN_LI_AT='...'
+export LINKEDIN_JSESSIONID='"ajax:..."'
+uv run linkedin-cli auth-status
+```
+
+Prefer the full Cookie header when feed/profile probes redirect or return authwall/checkpoint behavior.
 
 ## 4. Set Up Official Posting OAuth
 
@@ -128,17 +150,17 @@ uv run linkedin-cli post article --text-file post.md --url https://example.com/p
 uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json
 uv run linkedin-cli post get urn:li:share:123 --json
-uv run linkedin-cli post list --count 10 --json
+uv run linkedin-cli post list --limit 10 --json
 ```
 
 Official comment, reaction, and social metadata commands may need additional social feed permissions:
 
 ```bash
 uv run linkedin-cli comment list urn:li:ugcPost:123 --json
-uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
-uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --dry-run --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --dry-run --json
 uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
-uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --dry-run --json
 uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
 ```
 

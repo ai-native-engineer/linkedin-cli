@@ -37,10 +37,11 @@ If the repository has a local virtual environment but `uv` is not available, use
 Always start with:
 
 ```bash
+uv run linkedin-cli auth status --json
 uv run linkedin-cli auth-status
 ```
 
-Treat a degraded result as a blocker for all read and write requests until the session is repaired.
+Treat a degraded result as a blocker for read commands and browser/session fallback mutations until the session is repaired.
 
 Healthy output usually contains:
 
@@ -58,12 +59,19 @@ uv sync --extra dev
 uv run linkedin-cli --help
 ```
 
+Save a full LinkedIn read-session Cookie header without printing it:
+
+```bash
+uv run linkedin-cli auth cookie-file --from-stdin
+uv run linkedin-cli auth-status
+```
+
 Issue and save official publishing OAuth:
 
 ```bash
 export LINKEDIN_CLIENT_ID='...'
 export LINKEDIN_CLIENT_SECRET='...'
-uv run linkedin-cli auth oauth-login
+uv run linkedin-cli auth oauth-login --json --output tmp/linkedin-auth-oauth-login.json
 ```
 
 Check official OAuth permissions without mutating LinkedIn:
@@ -125,9 +133,9 @@ Inspect one activity:
 
 ```bash
 uv run linkedin-cli read activity urn:li:activity:123 --json
-uv run linkedin activity urn:li:activity:123 --json
-uv run linkedin activity 123 --json
-uv run linkedin activity https://www.linkedin.com/feed/update/urn:li:activity:123/ --json
+uv run linkedin activity urn:li:activity:123 --json --output tmp/linkedin-activity.json
+uv run linkedin activity 123 --json --output tmp/linkedin-activity.json
+uv run linkedin activity https://www.linkedin.com/feed/update/urn:li:activity:123/ --json --output tmp/linkedin-activity.json
 ```
 
 Read comments and reactions for one activity through the unofficial fallback:
@@ -144,6 +152,7 @@ Official text publishing uses LinkedIn Posts API:
 ```bash
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
 uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json
+uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json --output tmp/linkedin-post-text-dry-run.json
 uv run linkedin-cli post text --text-file post.md --visibility public --json
 ```
 
@@ -182,16 +191,22 @@ uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option
 uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --json
 ```
 
-Official article, reshare, update, get, and list commands:
+Official article, reshare/quote, update, get, and list commands:
 
 ```bash
 uv run linkedin-cli post article --text-file post.md --url https://example.com/post --dry-run --json
 uv run linkedin-cli post article --text-file post.md --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post quote urn:li:share:123 --text-file post.md --dry-run --json
+uv run linkedin-cli post reply urn:li:ugcPost:123 --text-file reply.md --dry-run --json
+uv run linkedin-cli post repost urn:li:share:123 --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text-file post.md --dry-run --json
 uv run linkedin-cli post get urn:li:share:123 --json
-uv run linkedin-cli post list --count 10 --json
+uv run linkedin-cli post list --limit 10 --json
+uv run linkedin-cli post list --limit 10 --json --output tmp/linkedin-posts.json
 ```
+
+`post quote` is a command alias for LinkedIn's official reshare payload with commentary. `post reply` is a command alias for LinkedIn's official Comments API. `post repost` is intentionally an `unsupported` contract boundary until commentary-free repost is implemented safely.
 
 Official post deletion removes a post by share/ugcPost URN, numeric share id, or feed update URL:
 
@@ -205,16 +220,29 @@ Official comments, reactions, and social metadata commands:
 ```bash
 uv run linkedin-cli comment list urn:li:ugcPost:123 --json
 uv run linkedin-cli comment get urn:li:ugcPost:123 987654321 --json
-uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
-uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated comment" --json
-uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
+uv run linkedin-cli comment get urn:li:ugcPost:123 987654321 --json --output tmp/linkedin-comment.json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --dry-run --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --dry-run --json --output tmp/linkedin-comment-create-dry-run.json
+uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated comment" --dry-run --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --dry-run --json
 uv run linkedin-cli reaction list urn:li:ugcPost:123 --json
 uv run linkedin-cli reaction get urn:li:ugcPost:123 --json
-uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
-uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
+uv run linkedin-cli reaction list urn:li:ugcPost:123 --json --output tmp/linkedin-reactions.json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --dry-run --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --dry-run --json --output tmp/linkedin-reaction-create-dry-run.json
+uv run linkedin-cli reaction delete urn:li:ugcPost:123 --dry-run --json
 uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
-uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json
+uv run linkedin-cli social metadata urn:li:ugcPost:123 --json --output tmp/linkedin-social-metadata.json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --dry-run --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --dry-run --json --output tmp/linkedin-comments-state-dry-run.json
+uv run linkedin-cli insights media urn:li:ugcPost:123 --json
+uv run linkedin-cli insights media urn:li:ugcPost:123 --json --output tmp/linkedin-insights.json
+uv run linkedin-cli insights organization urn:li:organization:123 --json
+uv run linkedin-cli insights user --json
+uv run linkedin-cli insights user --json --output tmp/linkedin-insights-user.json
 ```
+
+`insights media` returns the Social Metadata API response in the common `insights.media` envelope. `insights organization` returns Organization Share Statistics API output in `insights.organization`. `insights user` is an `unsupported` contract boundary for personal account-level analytics.
 
 Legacy browser/session mutations:
 
@@ -250,8 +278,18 @@ Use `--output <file>` only on commands that implement it:
 - `read reactions`
 - `read profile-posts`
 - `profile-posts`
+- `post get`
+- `post list`
+- `comment list`
+- `comment get`
+- `reaction list`
+- `reaction get`
+- `social metadata`
+- `insights media`
+- `insights organization`
+- `insights user`
 
-For the contract commands (`auth status`, `auth permission-check`, `read feed`, `read saved`, `read search`, `read profile`, `read activity`, `read comments`, `read reactions`, `read profile-posts`, `saved list`), `--output` only writes a file when `--json` is also passed — the file contains the contract envelope, so always pair `--output` with `--json`. The flat commands (`feed`, `search`, `profile-posts`) write the file regardless of `--json`.
+For the contract commands (`auth status`, `auth permission-check`, `read feed`, `read saved`, `read search`, `read profile`, `read activity`, `read comments`, `read reactions`, `read profile-posts`, `saved list`, `post get`, `post list`, `comment list`, `comment get`, `reaction list`, `reaction get`, `social metadata`, `insights media`, `insights organization`, `insights user`), `--output` only writes a file when `--json` is also passed — the file contains the contract envelope, so always pair `--output` with `--json`. The flat commands (`feed`, `search`, `profile-posts`) write the file regardless of `--json`.
 
 Do not assume legacy `profile` or `activity` support `--output`; use canonical `read profile` or `read activity` when a contract file is needed.
 
@@ -284,7 +322,7 @@ Read saved posts and remove one saved item:
 
 ```bash
 uv run linkedin-cli read saved --limit 20 --json
-uv run linkedin-cli saved unsave urn:li:activity:7323456789012345678 --json
+uv run linkedin-cli saved unsave urn:li:activity:7323456789012345678 --dry-run --json
 ```
 
 Validate a text post against the official publishing surface without side effects:
@@ -305,6 +343,9 @@ uv run linkedin-cli post document --text "hello deck" --document deck.pdf --titl
 uv run linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:7323456789012345678 --text "worth reading" --json
+uv run linkedin-cli post quote urn:li:share:7323456789012345678 --text "worth reading" --json
+uv run linkedin-cli post reply urn:li:ugcPost:7323456789012345678 --text "great post" --json
+uv run linkedin-cli post repost urn:li:share:7323456789012345678 --dry-run --json
 ```
 
 Delete a post through official LinkedIn APIs:
@@ -352,7 +393,11 @@ The following are implemented and covered by tests, but are less battle-tested a
 - official `post text`
 - official `post media`
 - official `post article`
-- official `post reshare`
+- official `post reshare` / `post quote`
+- `post repost` unsupported boundary
+- official `insights media`
+- official `insights organization`
+- `insights user` unsupported boundary
 - official `post update`
 - official `post get`
 - official `post list`

@@ -21,6 +21,7 @@ from .config import AppConfig
 from .constants import ENV_BROWSER_STATE
 from .constants import ENV_PASSWORD
 from .constants import ENV_USERNAME
+from .structmatch import extract_activity_id
 
 
 class BrowserActionError(RuntimeError):
@@ -59,6 +60,9 @@ class LinkedInBrowserFallback:
                     "button:has-text('Start a post')",
                     "[aria-label*='Start a post']",
                     "button.share-box-feed-entry__trigger",
+                    "button:has-text('게시물 작성')",
+                    "button:has-text('새 게시물')",
+                    "[aria-label*='게시물 작성']",
                 ],
             )
             composer = self._locator_for(
@@ -75,6 +79,8 @@ class LinkedInBrowserFallback:
                 [
                     "[role='dialog'] button:has-text('Post')",
                     "button.share-actions__primary-action",
+                    "[role='dialog'] button:has-text('게시')",
+                    "[role='dialog'] button[type='submit']",
                 ],
             )
         return BrowserActionResult(True, "Post created through browser fallback.")
@@ -86,6 +92,8 @@ class LinkedInBrowserFallback:
                 [
                     "button[aria-label*='Comment']",
                     "button:has-text('Comment')",
+                    "button[aria-label*='댓글']",
+                    "button:has-text('댓글')",
                 ],
                 optional=True,
             )
@@ -106,6 +114,9 @@ class LinkedInBrowserFallback:
                     "button.comments-comment-box__submit-button--cr",
                     "button:has-text('Post comment')",
                     "button:has-text('Comment')",
+                    "button:has-text('댓글 게시')",
+                    "button:has-text('게시')",
+                    "form.comments-comment-box__form button[type='submit']",
                 ],
             )
         return BrowserActionResult(True, "Comment posted through browser fallback.")
@@ -130,6 +141,8 @@ class LinkedInBrowserFallback:
                     "button[aria-label*='관리 메뉴 열기']",
                     "button.feed-shared-control-menu__trigger",
                     "button[aria-label*='Open control menu']",
+                    "button[aria-haspopup='menu']",
+                    "button[aria-haspopup='true']",
                 ],
             )
             labels = _wait_for_menu_labels(page, timeout=self.config.rate_limit.timeout)
@@ -169,6 +182,8 @@ class LinkedInBrowserFallback:
                         "button[aria-pressed='true'][aria-label*='reaction']",
                         "button.react-button--active",
                         "button.reactions-react-button[aria-pressed='true']",
+                        "[class*='social-action'] button[aria-pressed='true']",
+                        "[class*='reactions'] button[aria-pressed='true']",
                     ],
                 )
                 return BrowserActionResult(True, "Reaction removed through browser fallback.")
@@ -180,6 +195,8 @@ class LinkedInBrowserFallback:
                         "button[aria-label*='Like']",
                         "button:has-text('Like')",
                         "button.reactions-react-button",
+                        "button[aria-label*='좋아요']",
+                        "button:has-text('좋아요')",
                     ],
                 )
                 return BrowserActionResult(True, "Reaction applied through browser fallback.")
@@ -252,30 +269,38 @@ class LinkedInBrowserFallback:
         )
 
     def _set_visibility(self, page, visibility: str) -> None:
-        label = "Anyone" if visibility == "public" else "Connections only"
+        labels = ["Anyone", "전체 공개"] if visibility == "public" else [
+            "Connections only",
+            "1촌만",
+            "연결만",
+        ]
         self._click_first(
             page,
             [
                 "[role='dialog'] button[aria-label*='Post setting']",
                 "[role='dialog'] button:has-text('Anyone')",
                 "[role='dialog'] button:has-text('Connections only')",
+                "[role='dialog'] button[aria-label*='공개 대상']",
             ],
             optional=True,
         )
-        self._click_first(
-            page,
-            [
-                f"[role='dialog'] label:has-text('{label}')",
-                f"[role='dialog'] div:has-text('{label}')",
-                f"[role='dialog'] span:has-text('{label}')",
-            ],
-            optional=True,
-        )
+        label_selectors: list[str] = []
+        for label in labels:
+            label_selectors.extend(
+                [
+                    f"[role='dialog'] label:has-text('{label}')",
+                    f"[role='dialog'] div:has-text('{label}')",
+                    f"[role='dialog'] span:has-text('{label}')",
+                ]
+            )
+        self._click_first(page, label_selectors, optional=True)
         self._click_first(
             page,
             [
                 "[role='dialog'] button:has-text('Done')",
                 "[role='dialog'] button:has-text('Save')",
+                "[role='dialog'] button:has-text('완료')",
+                "[role='dialog'] button:has-text('저장')",
             ],
             optional=True,
         )
@@ -324,9 +349,11 @@ class LinkedInBrowserFallback:
         for _ in range(5):
             current_count = page.evaluate(
                 """
-                () => Array.from(document.querySelectorAll('main li'))
-                  .filter(li => li.querySelector('a[href*="/feed/update/urn:li:activity:"]'))
-                  .length
+                () => new Set(
+                  Array.from(document.querySelectorAll('a[href*="/feed/update/urn:li:activity:"]'))
+                    .map(a => (a.href.match(/urn:li:activity:(\\d+)/) || [])[1])
+                    .filter(Boolean)
+                ).size
                 """
             )
             if isinstance(current_count, int) and current_count >= count:
@@ -367,7 +394,7 @@ class LinkedInBrowserFallback:
                 "LINKEDIN_PASSWORD, or save the LinkedIn password in Chrome Password Manager on macOS."
             )
 
-        self._fill_first(
+        self._type_first(
             page,
             [
                 "input[name='session_key']",
@@ -378,7 +405,7 @@ class LinkedInBrowserFallback:
             ],
             credentials.username,
         )
-        self._fill_first(
+        self._type_first(
             page,
             [
                 "input[name='session_password']",
@@ -435,26 +462,29 @@ class LinkedInBrowserFallback:
         _harden_state_permissions(state_path)
         return True
 
-    def _fill_first(self, page, selectors: Iterable[str], value: str) -> None:
+    def _type_first(self, page, selectors: Iterable[str], value: str) -> None:
         timeout_ms = min(max(int(self.config.rate_limit.timeout * 250), 1000), 5000)
-        last_error: Exception | None = None
         for selector in selectors:
             locator = page.locator(selector)
             for target in _locator_candidates(locator):
                 try:
                     target.wait_for(state="visible", timeout=timeout_ms)
-                    target.fill(value, timeout=timeout_ms)
+                    target.click(timeout=timeout_ms)
+                    page.keyboard.press("ControlOrMeta+A")
+                    page.keyboard.press("Backspace")
+                    page.keyboard.insert_text(value)
                     return
-                except Exception as exc:
-                    last_error = exc
-        raise BrowserActionError(f"Unable to locate LinkedIn login input. Last error: {last_error}")
+                except Exception:
+                    continue
+        raise BrowserActionError("Unable to locate LinkedIn login input.")
 
 
 def _activity_url(activity_identifier: str) -> str:
     if activity_identifier.startswith("http://") or activity_identifier.startswith("https://"):
         return activity_identifier
-    if activity_identifier.startswith("urn:li:activity:"):
-        activity_identifier = activity_identifier.split(":")[-1]
+    activity_id = extract_activity_id(activity_identifier)
+    if activity_id:
+        return f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}/"
     return f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_identifier}/"
 
 
@@ -596,32 +626,49 @@ def _looks_logged_out(url: str, body_text: str) -> bool:
 _SAVED_POSTS_SCRIPT = """
 (limit) => {
   const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-  const cards = Array.from(document.querySelectorAll('main li'))
-    .filter((li) => li.querySelector('a[href*="/feed/update/urn:li:activity:"]'));
 
-  return cards.slice(0, limit).map((card) => {
+  // Anchor on the durable activity-permalink href, then walk UP to the enclosing
+  // card via closest() rather than pinning a fixed parent-list DOM path, so a
+  // wrapper change (list-item -> div/article) does not zero out every result.
+  const seen = new Set();
+  const cards = [];
+  for (const link of Array.from(document.querySelectorAll('a[href*="/feed/update/urn:li:activity:"]'))) {
+    const match = link.href.match(/urn:li:activity:(\\d+)/);
+    const id = match ? match[1] : '';
+    if (!id || seen.has(id)) continue;
+    const card = link.closest('[data-urn], [data-id], article, li, [role="listitem"]') || link.parentElement;
+    if (!card) continue;
+    seen.add(id);
+    cards.push({ card, id, activityUrl: link.href.split('?')[0] });
+    if (cards.length >= limit) break;
+  }
+
+  return cards.map(({ card, id, activityUrl }) => {
     const text = clean(card.innerText);
-    const menu = card.querySelector('button[aria-label*="업데이트 메뉴 더보기"], button[aria-label*="관리 메뉴 열기"], button[aria-label*="More actions"], button[aria-label*="Open control menu"], button[aria-label*="Open options"]');
-    const menuLabel = menu ? (menu.getAttribute('aria-label') || '') : '';
-    const authorFromMenu = menuLabel
-      .replace(/^클릭해서 /, '')
-      .replace(/의 업데이트 메뉴 더보기$/, '')
-      .replace(/ 님의 게시물에 대한 관리 메뉴 열기$/, '')
-      .replace(/님의 게시물에 대한 관리 메뉴 열기$/, '')
-      .trim();
-    const authorFromText = clean(text.split('님의 프로필 보기')[0]).replace(/^상태 - \\S+\\s+/, '');
-    const activityLink = Array.from(card.querySelectorAll('a[href*="/feed/update/urn:li:activity:"]'))[0];
-    const activityUrl = activityLink ? activityLink.href.split('?')[0] : '';
-    const activityMatch = activityUrl.match(/urn:li:activity:(\\d+)/);
+    // Prefer the structural /in/ or /company/ profile link over locale-specific
+    // visible-text parsing for the author.
     const profileLink = Array.from(card.querySelectorAll('a[href*="/in/"], a[href*="/company/"]'))[0];
     const profileUrl = profileLink ? profileLink.href.split('?')[0] : '';
+    const slugMatch = profileUrl.match(/\\/(?:in|company)\\/([^/?#]+)/);
+    const slug = slugMatch ? decodeURIComponent(slugMatch[1]) : '';
+
+    let authorName = '';
+    if (profileLink) {
+      authorName = clean(profileLink.getAttribute('aria-label') || profileLink.innerText || '');
+    }
+    // Last-resort localized heuristic, retained for ko_KR layouts that hide the name.
+    if (!authorName) {
+      authorName = clean(text.split('님의 프로필 보기')[0]).replace(/^상태 - \\S+\\s+/, '');
+    }
+    if (!authorName) authorName = slug;
+
     const headlineMatch = text.match(/님의 프로필 보기\\s*[^•]*•\\s*[^•]*\\s*(.*?)\\s+\\d+[분시간일주개월년]/);
 
     return {
-      entityUrn: activityMatch ? `urn:li:activity:${activityMatch[1]}` : '',
+      entityUrn: `urn:li:activity:${id}`,
       url: activityUrl,
       commentary: text,
-      author_name: authorFromMenu || authorFromText,
+      author_name: authorName,
       author_profile: profileUrl,
       headline: headlineMatch ? clean(headlineMatch[1]) : '',
       savedByViewer: true,

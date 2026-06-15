@@ -20,7 +20,7 @@
 
 태그: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`, `oauth`, `comments`, `reactions`, `media`
 
-> 이 프로젝트는 LinkedIn과 무관합니다. 읽기 명령은 비공식 웹 동작에 의존하며, LinkedIn 내부 엔드포인트가 바뀌면 깨질 수 있습니다. 계정에 적용되는 약관은 사용자가 직접 검토해야 합니다.
+> 이 프로젝트는 LinkedIn과 무관합니다. 읽기 명령은 비공식 웹 동작에 의존하며, LinkedIn 내부 엔드포인트가 바뀌면 깨질 수 있습니다. 계정에 적용되는 약관은 사용자가 직접 검토해야 하며, 준수 책임은 사용자에게 있습니다.
 
 ## 기능
 
@@ -47,10 +47,14 @@
 - Posts API로 non-sponsored poll 게시
 - article/link 게시
 - 기존 게시글 재공유
+- 공식 Comments API 기반 `post reply` 답글 작성
 - 게시글 commentary 수정
 - 공식 Comments API로 댓글 목록/조회/작성/수정/삭제
 - 공식 Reactions API로 반응 목록/조회/생성/삭제
 - 공식 Social Metadata API로 반응/댓글 요약 조회 및 댓글 open/closed 상태 수정
+- Social Metadata API 결과를 `insights.media` 계약으로 조회
+- Organization Share Statistics API 결과를 `insights.organization` 계약으로 조회
+- 개인 계정 단위 `insights.user`는 현재 `unsupported` 계약으로 명시
 - 토큰에 필요한 read 권한이 있을 때 단일 게시글 조회 및 author별 게시글 목록 조회
 - share/ugcPost URN, numeric share id, feed update URL로 본인 공식 게시글 삭제
 - 저장한 게시글 저장 취소
@@ -88,10 +92,10 @@ CLI 확인:
 linkedin-cli --help
 ```
 
-읽기 명령은 LinkedIn 웹 세션이 필요합니다. 가장 안정적인 방식은 로그인된 브라우저에서 전체 cookie header를 복사하는 것입니다.
+읽기 명령은 LinkedIn 웹 세션이 필요합니다. 가장 안정적인 방식은 로그인된 브라우저에서 전체 Cookie header를 복사해 private cookie file로 저장하는 것입니다. 아래 명령을 실행한 뒤 header를 붙여넣고 `Ctrl-D`로 입력을 끝냅니다.
 
 ```bash
-export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; bcookie="..."; bscookie="..."; ...'
+linkedin-cli auth cookie-file --from-stdin
 linkedin-cli auth-status
 ```
 
@@ -119,6 +123,7 @@ linkedin-cli read search "AI engineer" --limit 10 --json
 
 ```bash
 linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
+linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json --output tmp/linkedin-post-text-dry-run.json
 linkedin-cli post text --text "hello from linkedin-cli" --visibility public --json
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --dry-run --json
@@ -127,19 +132,30 @@ linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck
 linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --dry-run --json
 linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --dry-run --json
+linkedin-cli post quote urn:li:share:1234567890 --text "worth reading" --dry-run --json
+linkedin-cli post reply urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli post repost urn:li:share:1234567890 --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --dry-run --json
 linkedin-cli post get urn:li:share:1234567890 --json
-linkedin-cli post list --count 10 --json
+linkedin-cli post list --limit 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
-linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
-linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
-linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
-linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
-linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json --output tmp/linkedin-comment-create-dry-run.json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --dry-run --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --dry-run --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json --output tmp/linkedin-reaction-create-dry-run.json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --dry-run --json
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
-linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json --output tmp/linkedin-social-metadata.json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --dry-run --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --dry-run --json --output tmp/linkedin-comments-state-dry-run.json
+linkedin-cli insights media urn:li:ugcPost:1234567890 --json
+linkedin-cli insights organization urn:li:organization:123456 --json
+linkedin-cli insights user --json
+linkedin-cli insights user --json --output tmp/linkedin-insights-user.json
 ```
 
 긴 글이나 생성된 글은 inline text보다 파일 입력을 권장합니다.
@@ -222,7 +238,7 @@ linkedin-cli auth oauth-login
 유용한 옵션:
 
 ```bash
-linkedin-cli auth oauth-login --json
+linkedin-cli auth oauth-login --json --output tmp/linkedin-auth-oauth-login.json
 linkedin-cli auth oauth-login --timeout 300
 linkedin-cli auth oauth-login --no-open
 linkedin-cli auth oauth-login --redirect-uri http://localhost:8787/callback
@@ -309,16 +325,24 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 
 1. `LINKEDIN_COOKIE_HEADER`
 2. `LINKEDIN_LI_AT` + `LINKEDIN_JSESSIONID`
-3. Chrome, Chromium, Brave, Edge, Firefox의 브라우저 cookie 추출
+3. `LINKEDIN_COOKIE_FILE` 또는 기본 파일 `~/.config/linkedin/cookies.env`
+4. Chrome, Chromium, Brave, Edge, Firefox의 브라우저 cookie 추출
 
-전체 cookie header:
+권장: 전체 Cookie header를 private file로 저장합니다. 이 명령은 값을 출력하지 않고 파일 권한을 `600`으로 설정합니다.
+
+```bash
+linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth-status
+```
+
+일회성 env 방식:
 
 ```bash
 export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; ...'
 linkedin-cli auth-status
 ```
 
-최소 cookie 변수:
+최소 cookie 변수. authwall/checkpoint나 redirect가 나오면 전체 Cookie header를 사용하세요.
 
 ```bash
 export LINKEDIN_LI_AT='AQ...'
@@ -332,6 +356,7 @@ export LINKEDIN_BROWSER='chrome'
 export LINKEDIN_HEADLESS='1'
 export LINKEDIN_PROXY='http://127.0.0.1:7890'
 export LINKEDIN_CONFIG="$PWD/config.yaml"
+export LINKEDIN_COOKIE_FILE="$HOME/.config/linkedin/cookies.env"
 export LINKEDIN_BROWSER_STATE="$HOME/.config/linkedin-cli/browser-state.json"
 ```
 
@@ -353,7 +378,7 @@ linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "product manager" --limit 10 --json
 
 linkedin-cli saved list --limit 20 --json
-linkedin-cli saved unsave urn:li:activity:123 --json
+linkedin-cli saved unsave urn:li:activity:123 --dry-run --json
 
 linkedin-cli post text --text "hello" --visibility public --dry-run --json
 linkedin-cli post text --text-file draft.md --visibility public --json
@@ -364,25 +389,33 @@ linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck
 linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --json
 linkedin-cli post article --text "read this" --url https://example.com/post --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --json
+linkedin-cli post quote urn:li:share:1234567890 --text "worth reading" --json
+linkedin-cli post reply urn:li:ugcPost:1234567890 --text "great post" --json
+linkedin-cli post repost urn:li:share:1234567890 --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --json
 linkedin-cli post get urn:li:share:1234567890 --json
-linkedin-cli post list --count 10 --json
+linkedin-cli post list --limit 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
 
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
 linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
-linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
-linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
-linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --dry-run --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --dry-run --json
 
 linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
 linkedin-cli reaction get urn:li:ugcPost:1234567890 --json
-linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
-linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --dry-run --json
 
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
-linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json --output tmp/linkedin-social-metadata.json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --dry-run --json
+linkedin-cli insights media urn:li:ugcPost:1234567890 --json
+linkedin-cli insights organization urn:li:organization:123456 --json
+linkedin-cli insights user --json
+linkedin-cli insights user --json --output tmp/linkedin-insights-user.json
 ```
 
 Legacy 호환 명령:
@@ -390,9 +423,9 @@ Legacy 호환 명령:
 ```bash
 linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
-linkedin-cli profile seungwon-aiden --json
+linkedin-cli profile seungwon-aiden --json --output tmp/linkedin-profile.json
 linkedin-cli profile-posts seungwon-aiden --max 20
-linkedin-cli activity urn:li:activity:123
+linkedin-cli activity urn:li:activity:123 --json --output tmp/linkedin-activity.json
 linkedin-cli post "hello from browser fallback"
 linkedin-cli react urn:li:activity:123 --type like
 linkedin-cli unreact urn:li:activity:123
@@ -446,17 +479,16 @@ delete_result = api.delete_post(post_id=result.post_id)
 print(delete_result.deleted_at)
 ```
 
-## Skills와 Plugin
+## Skills
 
 이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`와 `.claude/skills/`는 이 skill로 연결된 심볼릭 링크입니다.
+플러그인 설치 경로는 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json) 메타데이터와 같은 skill을 사용합니다. 설치 후 `$linkedin-cli`를 실행하면 read 인증은 `auth cookie-file --from-stdin` → `auth-status` 순서로 확인합니다.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — 첫 셋업과 OAuth/쿠키 인증
 - [command-cookbook.md](./.agents/skills/linkedin-cli/references/command-cookbook.md) — 정확한 명령 패턴과 JSON 사용
 - [auth-troubleshooting.md](./.agents/skills/linkedin-cli/references/auth-troubleshooting.md) — 세션 복구와 진단
 - [write-workflows.md](./.agents/skills/linkedin-cli/references/write-workflows.md) — 공식 발행과 안전한 mutation
-
-Claude 플러그인 메타데이터는 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)에 있습니다.
 
 ## 개발
 
@@ -477,7 +509,7 @@ uv run python -m compileall linkedin_cli tests
 ## 보안
 
 - cookie, OAuth token, HAR file, browser storage state를 commit하지 않습니다.
-- `LINKEDIN_COOKIE_HEADER`, `li_at`, `JSESSIONID`, access token, client secret, token file을 issue나 PR에 붙이지 않습니다.
+- `LINKEDIN_COOKIE_HEADER`, `li_at`, `JSESSIONID`, `~/.config/linkedin/cookies.env`, access token, client secret, token file을 issue나 PR에 붙이지 않습니다.
 - screenshot, log, terminal transcript를 공유하기 전에 secret을 제거합니다.
 
 [SECURITY.md](.github/SECURITY.md)를 참고하세요.

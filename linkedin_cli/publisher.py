@@ -22,6 +22,9 @@ DOCUMENTS_INITIALIZE_URL = "https://api.linkedin.com/rest/documents?action=initi
 SOCIAL_ACTIONS_URL = "https://api.linkedin.com/rest/socialActions"
 REACTIONS_URL = "https://api.linkedin.com/rest/reactions"
 SOCIAL_METADATA_URL = "https://api.linkedin.com/rest/socialMetadata"
+ORGANIZATIONAL_ENTITY_SHARE_STATISTICS_URL = (
+    "https://api.linkedin.com/rest/organizationalEntityShareStatistics"
+)
 RESTLI_PROTOCOL_VERSION = "2.0.0"
 SUPPORTED_IMAGE_CONTENT_TYPES = {"image/gif", "image/jpeg", "image/png"}
 SUPPORTED_VIDEO_CONTENT_TYPES = {"video/mp4"}
@@ -188,6 +191,16 @@ class SocialMetadataResult:
     """Official social metadata retrieval or update result."""
 
     entity_urn: str
+    raw: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class OrganizationShareStatisticsResult:
+    """Official organization share statistics result."""
+
+    organization_urn: str
+    elements: list[dict[str, Any]]
+    paging: dict[str, Any]
     raw: dict[str, Any]
 
 
@@ -932,6 +945,51 @@ class LinkedInPublisher:
         entity_urn = normalize_social_entity_id(entity)
         response = self._get(f"{SOCIAL_METADATA_URL}/{quote(entity_urn, safe='')}")
         return SocialMetadataResult(entity_urn=entity_urn, raw=response)
+
+    def get_organization_share_statistics(
+        self,
+        *,
+        organization: str,
+        shares: Sequence[str] = (),
+        ugc_posts: Sequence[str] = (),
+        time_granularity: Optional[str] = None,
+        time_start: Optional[int] = None,
+        time_end: Optional[int] = None,
+    ) -> OrganizationShareStatisticsResult:
+        """Retrieve share statistics for a LinkedIn organization."""
+        organization_urn = normalize_organization_urn(organization)
+        params: dict[str, str] = {
+            "q": "organizationalEntity",
+            "organizationalEntity": organization_urn,
+        }
+        if shares:
+            params["shares"] = _restli_list([normalize_share_urn(value) for value in shares])
+        if ugc_posts:
+            params["ugcPosts"] = _restli_list([normalize_ugc_post_urn(value) for value in ugc_posts])
+        if time_granularity:
+            params["timeIntervals.timeGranularityType"] = normalize_time_granularity(time_granularity)
+        if time_start is not None:
+            params["timeIntervals.timeRange.start"] = str(int(time_start))
+        if time_end is not None:
+            params["timeIntervals.timeRange.end"] = str(int(time_end))
+
+        response = self._get(ORGANIZATIONAL_ENTITY_SHARE_STATISTICS_URL, params=params)
+        elements = response.get("elements", [])
+        if not isinstance(elements, list):
+            raise LinkedInPublishError(
+                "LinkedIn Organization Share Statistics API returned a non-list elements field.",
+                code="contract_error",
+                retryable=True,
+            )
+        paging = response.get("paging", {})
+        if not isinstance(paging, dict):
+            paging = {}
+        return OrganizationShareStatisticsResult(
+            organization_urn=organization_urn,
+            elements=elements,
+            paging=paging,
+            raw=response,
+        )
 
     def update_comments_state(
         self,
@@ -1813,6 +1871,68 @@ def normalize_social_entity_id(entity: str) -> str:
             ]
         },
     )
+
+
+def normalize_organization_urn(value: str) -> str:
+    """Return an organization URN accepted by LinkedIn organization analytics APIs."""
+    normalized = unquote(_normalize_non_empty(value, label="Organization").strip().rstrip("/"))
+    if normalized.startswith("urn:li:organization:"):
+        return normalized
+    if normalized.isdigit():
+        return f"urn:li:organization:{normalized}"
+    raise LinkedInPublishError(
+        "LinkedIn organization insights require an organization URN or numeric organization id.",
+        code="invalid_request",
+        retryable=False,
+        details={"accepted_prefixes": ["urn:li:organization:"]},
+    )
+
+
+def normalize_share_urn(value: str) -> str:
+    """Return a share URN accepted by LinkedIn organization share statistics filters."""
+    normalized = unquote(_normalize_non_empty(value, label="Share").strip().rstrip("/"))
+    if normalized.startswith("urn:li:share:"):
+        return normalized
+    if normalized.isdigit():
+        return f"urn:li:share:{normalized}"
+    raise LinkedInPublishError(
+        "LinkedIn organization share statistics --share filters require share URNs or numeric share ids.",
+        code="invalid_request",
+        retryable=False,
+        details={"accepted_prefixes": ["urn:li:share:"]},
+    )
+
+
+def normalize_ugc_post_urn(value: str) -> str:
+    """Return a UGC post URN accepted by LinkedIn organization share statistics filters."""
+    normalized = unquote(_normalize_non_empty(value, label="UGC post").strip().rstrip("/"))
+    if normalized.startswith("urn:li:ugcPost:"):
+        return normalized
+    if normalized.isdigit():
+        return f"urn:li:ugcPost:{normalized}"
+    raise LinkedInPublishError(
+        "LinkedIn organization share statistics --ugc-post filters require ugcPost URNs or numeric ids.",
+        code="invalid_request",
+        retryable=False,
+        details={"accepted_prefixes": ["urn:li:ugcPost:"]},
+    )
+
+
+def normalize_time_granularity(value: str) -> str:
+    """Return a LinkedIn analytics time granularity enum."""
+    normalized = _normalize_non_empty(value, label="Time granularity").replace("-", "_").upper()
+    if normalized in {"DAY", "MONTH"}:
+        return normalized
+    raise LinkedInPublishError(
+        "LinkedIn organization share statistics time granularity must be DAY or MONTH.",
+        code="invalid_request",
+        retryable=False,
+        details={"supported_time_granularity": ["DAY", "MONTH"]},
+    )
+
+
+def _restli_list(values: Sequence[str]) -> str:
+    return "List(" + ",".join(values) + ")"
 
 
 def normalize_post_id(post_id: str) -> str:

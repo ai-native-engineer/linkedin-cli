@@ -6,8 +6,10 @@ from linkedin_cli.contract import SCHEMA_VERSION
 from linkedin_cli.contract import envelope
 from linkedin_cli.contract import error_envelope
 from linkedin_cli.contract import feed_data
+from linkedin_cli.contract import organization_insights_data
 from linkedin_cli.contract import post_text_dry_run_data
 from linkedin_cli.contract import to_contract_json
+from linkedin_cli.publisher import OrganizationShareStatisticsResult
 
 
 def test_envelope_serializes_success_payload(sample_post) -> None:
@@ -127,6 +129,54 @@ def test_post_text_dry_run_data_has_no_side_effect_result() -> None:
         "media_count": 0,
         "api": "linkedin.posts",
     }
+
+
+def test_organization_insights_data_sums_share_statistics() -> None:
+    data = organization_insights_data(
+        OrganizationShareStatisticsResult(
+            organization_urn="urn:li:organization:123",
+            elements=[
+                {
+                    "organizationalEntity": "urn:li:organization:123",
+                    "share": "urn:li:share:1",
+                    "totalShareStatistics": {
+                        "likeCount": 3,
+                        "commentCount": 2,
+                        "shareCount": 1,
+                        "impressionCount": 10,
+                        "uniqueImpressionsCount": 8,
+                        "clickCount": 4,
+                    },
+                },
+                {
+                    "organizationalEntity": "urn:li:organization:123",
+                    "ugcPost": "urn:li:ugcPost:2",
+                    "totalShareStatistics": {
+                        "likeCount": 7,
+                        "commentCount": 1,
+                        "shareCount": 2,
+                        "impressionCount": 20,
+                        "uniqueImpressionsCount": 15,
+                        "clickCount": 6,
+                    },
+                },
+            ],
+            paging={"count": 2},
+            raw={"elements": []},
+        )
+    )
+
+    assert data["scope"] == "organization"
+    assert data["organization"]["id"] == "urn:li:organization:123"
+    assert data["metrics"] == {
+        "likes": 10,
+        "comments": 3,
+        "reposts": 3,
+        "views": 30,
+        "unique_views": 23,
+        "clicks": 10,
+    }
+    assert data["entries"][0]["metrics"]["likes"] == 3
 
 
 def test_contract_raw_drops_secret_keys() -> None:

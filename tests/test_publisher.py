@@ -8,6 +8,7 @@ from linkedin_cli.publisher import DOCUMENTS_INITIALIZE_URL
 from linkedin_cli.publisher import IMAGES_INITIALIZE_URL
 from linkedin_cli.publisher import LinkedInPublishError
 from linkedin_cli.publisher import LinkedInPublisher
+from linkedin_cli.publisher import ORGANIZATIONAL_ENTITY_SHARE_STATISTICS_URL
 from linkedin_cli.publisher import POSTS_URL
 from linkedin_cli.publisher import REACTIONS_URL
 from linkedin_cli.publisher import REST_POSTS_URL
@@ -17,6 +18,7 @@ from linkedin_cli.publisher import VIDEOS_FINALIZE_URL
 from linkedin_cli.publisher import VIDEOS_INITIALIZE_URL
 from linkedin_cli.publisher import normalize_reaction_type
 from linkedin_cli.publisher import normalize_poll_duration
+from linkedin_cli.publisher import normalize_organization_urn
 from linkedin_cli.publisher import normalize_social_entity_id
 from linkedin_cli.publisher import normalize_delete_post_id
 
@@ -599,6 +601,52 @@ def test_get_social_metadata_success() -> None:
 
     assert result.raw["commentsState"] == "OPEN"
     assert client.get_calls[0]["url"] == f"{SOCIAL_METADATA_URL}/urn%3Ali%3AugcPost%3A123"
+
+
+def test_get_organization_share_statistics_success() -> None:
+    response = httpx.Response(
+        200,
+        json={
+            "elements": [
+                {
+                    "organizationalEntity": "urn:li:organization:123",
+                    "share": "urn:li:share:456",
+                    "totalShareStatistics": {"likeCount": 3, "impressionCount": 99},
+                }
+            ],
+            "paging": {"count": 1, "start": 0},
+        },
+    )
+    client = FakeClient(response)
+    publisher = LinkedInPublisher(_oauth(), client=client)
+
+    result = publisher.get_organization_share_statistics(
+        organization="123",
+        shares=("456",),
+        ugc_posts=("urn:li:ugcPost:789",),
+        time_granularity="day",
+        time_start=1710000000000,
+        time_end=1710086400000,
+    )
+
+    assert result.organization_urn == "urn:li:organization:123"
+    assert result.elements[0]["totalShareStatistics"]["likeCount"] == 3
+    url = client.get_calls[0]["url"]
+    assert url.startswith(f"{ORGANIZATIONAL_ENTITY_SHARE_STATISTICS_URL}?")
+    assert "q=organizationalEntity" in url
+    assert "organizationalEntity=urn%3Ali%3Aorganization%3A123" in url
+    assert "shares=List%28urn%3Ali%3Ashare%3A456%29" in url
+    assert "ugcPosts=List%28urn%3Ali%3AugcPost%3A789%29" in url
+    assert "timeIntervals.timeGranularityType=DAY" in url
+    assert "timeIntervals.timeRange.start=1710000000000" in url
+    assert "timeIntervals.timeRange.end=1710086400000" in url
+
+
+def test_normalize_organization_urn_rejects_non_organization() -> None:
+    assert normalize_organization_urn("123") == "urn:li:organization:123"
+    with pytest.raises(LinkedInPublishError) as exc_info:
+        normalize_organization_urn("urn:li:person:abc")
+    assert exc_info.value.code == "invalid_request"
 
 
 def test_update_comments_state_success() -> None:

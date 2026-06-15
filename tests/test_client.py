@@ -140,6 +140,37 @@ def test_get_reactions_fetches_unofficial_activity_reactions(monkeypatch) -> Non
     assert reactions == [{"reactionType": "LIKE"}]
 
 
+def test_require_activity_id_extracts_and_rejects_garbage() -> None:
+    client = object.__new__(LinkedInClient)
+
+    assert client._require_activity_id("urn:li:activity:123") == "123"
+    assert client._require_activity_id("urn:li:fsd_update:(urn:li:activity:55,FEED)") == "55"
+
+    try:
+        client._require_activity_id("urn:li:share:9")
+    except LinkedInClientError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("Expected LinkedInClientError for a non-activity urn")
+
+
+def test_engagement_counts_survive_relocated_social_detail() -> None:
+    client = object.__new__(LinkedInClient)
+
+    post = client._normalize_post(
+        {
+            "entityUrn": "urn:li:activity:1",
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:1/",
+            # counters relocated under a renamed parent, no reactionCount/socialDetail
+            "socialActivityCounts": {"numLikes": 7, "numComments": 3, "numShares": 2},
+        }
+    )
+
+    assert post.metrics.reactions == 7
+    assert post.metrics.comments == 3
+    assert post.metrics.reposts == 2
+
+
 def test_profile_summary_does_not_fall_back_to_headline() -> None:
     client = object.__new__(LinkedInClient)
 

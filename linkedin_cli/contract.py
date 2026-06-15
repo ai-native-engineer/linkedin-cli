@@ -16,6 +16,7 @@ from .publisher import CommentResult
 from .publisher import DeleteResult
 from .publisher import GetPostResult
 from .publisher import ListPostsResult
+from .publisher import OrganizationShareStatisticsResult
 from .publisher import PublishResult
 from .publisher import ReactionResult
 from .publisher import SocialActionResult
@@ -353,6 +354,28 @@ def post_create_dry_run_data(
     }
 
 
+def post_reply_dry_run_data(
+    *,
+    text: str,
+    reply_to: str,
+    parent_comment: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build dry-run data for `post.reply` through LinkedIn Comments API."""
+    planned: dict[str, Any] = {
+        "reply_to": reply_to,
+        "text_length": len(text),
+        "media_count": 0,
+        "api": "linkedin.comments",
+    }
+    if parent_comment:
+        planned["parent_comment"] = parent_comment
+    return {
+        "dry_run": True,
+        "post": None,
+        "planned": planned,
+    }
+
+
 def post_text_success_data(result: PublishResult) -> dict[str, Any]:
     """Build success data for `post.text`."""
     return {
@@ -364,6 +387,27 @@ def post_text_success_data(result: PublishResult) -> dict[str, Any]:
             "visibility": result.visibility,
             "source": "official",
             "raw": result.raw,
+        },
+        "planned": None,
+    }
+
+
+def post_reply_success_data(result: CommentResult) -> dict[str, Any]:
+    """Build success data for `post.reply` through LinkedIn Comments API."""
+    raw = _redact_secrets(result.raw)
+    return {
+        "dry_run": False,
+        "post": {
+            "id": result.comment_id,
+            "reply_to": result.entity_urn,
+            "source": "official",
+            "raw": raw,
+        },
+        "comment": {
+            "id": result.comment_id,
+            "entity": result.entity_urn,
+            "source": "official",
+            "raw": raw,
         },
         "planned": None,
     }
@@ -452,6 +496,15 @@ def comment_list_success_data(result: CommentListResult) -> dict[str, Any]:
     }
 
 
+def comment_dry_run_data(*, planned: dict[str, Any]) -> dict[str, Any]:
+    """Build dry-run data for official comment mutation commands."""
+    return {
+        "dry_run": True,
+        "comment": None,
+        "planned": planned,
+    }
+
+
 def reaction_success_data(result: ReactionResult) -> dict[str, Any]:
     """Build success data for official reaction get/create."""
     return {
@@ -480,6 +533,15 @@ def reaction_list_success_data(result: CommentListResult) -> dict[str, Any]:
     }
 
 
+def reaction_dry_run_data(*, planned: dict[str, Any]) -> dict[str, Any]:
+    """Build dry-run data for official reaction mutation commands."""
+    return {
+        "dry_run": True,
+        "reaction": None,
+        "planned": planned,
+    }
+
+
 def social_metadata_success_data(result: SocialMetadataResult) -> dict[str, Any]:
     """Build success data for official social metadata."""
     return {
@@ -488,6 +550,116 @@ def social_metadata_success_data(result: SocialMetadataResult) -> dict[str, Any]
             "source": "official",
             "raw": _redact_secrets(result.raw),
         }
+    }
+
+
+def social_metadata_dry_run_data(*, planned: dict[str, Any]) -> dict[str, Any]:
+    """Build dry-run data for official social metadata mutation commands."""
+    return {
+        "dry_run": True,
+        "social_metadata": None,
+        "planned": planned,
+    }
+
+
+def insights_data(result: SocialMetadataResult, *, scope: str) -> dict[str, Any]:
+    """Build `insights.media` data from LinkedIn social metadata."""
+    raw = _redact_secrets(result.raw)
+    metrics = {
+        "likes": _coerce_metric(
+            _first_present_value(
+                result.raw,
+                "likesSummary.totalLikes",
+                "likeSummary.totalLikes",
+                "reactionSummaries.LIKE",
+                "reactionCount",
+                "likes",
+            )
+        ),
+        "comments": _coerce_metric(
+            _first_present_value(
+                result.raw,
+                "commentsSummary.aggregatedTotalComments",
+                "commentsSummary.totalFirstLevelComments",
+                "aggregatedTotalComments",
+                "totalFirstLevelComments",
+                "commentCount",
+                "comments",
+            )
+        ),
+        "reposts": _coerce_metric(
+            _first_present_value(
+                result.raw,
+                "shareSummary.totalShares",
+                "resharesSummary.totalReshares",
+                "reshareCount",
+                "repostCount",
+                "reposts",
+            )
+        ),
+        "views": _coerce_metric(
+            _first_present_value(
+                result.raw,
+                "viewSummary.totalViews",
+                "impressionCount",
+                "views",
+            )
+        ),
+    }
+    return {
+        "scope": scope,
+        "metrics": metrics,
+        "raw": {
+            "entity": result.entity_urn,
+            "source": "official",
+            "social_metadata": raw,
+        },
+    }
+
+
+def organization_insights_data(result: OrganizationShareStatisticsResult) -> dict[str, Any]:
+    """Build `insights.organization` data from LinkedIn organization share statistics."""
+    raw = _redact_secrets(result.raw)
+    metrics = {
+        "likes": _sum_metric(result.elements, "totalShareStatistics.likeCount"),
+        "comments": _sum_metric(result.elements, "totalShareStatistics.commentCount"),
+        "reposts": _sum_metric(result.elements, "totalShareStatistics.shareCount"),
+        "views": _sum_metric(result.elements, "totalShareStatistics.impressionCount"),
+        "unique_views": _sum_metric(result.elements, "totalShareStatistics.uniqueImpressionsCount"),
+        "clicks": _sum_metric(result.elements, "totalShareStatistics.clickCount"),
+    }
+    return {
+        "scope": "organization",
+        "organization": {
+            "id": result.organization_urn,
+        },
+        "metrics": metrics,
+        "entries": [
+            {
+                "organization": _empty_to_none(item.get("organizationalEntity")),
+                "share": _empty_to_none(item.get("share")),
+                "ugc_post": _empty_to_none(item.get("ugcPost")),
+                "time_range": item.get("timeRange") if isinstance(item.get("timeRange"), dict) else None,
+                "metrics": {
+                    "likes": _coerce_metric(_first_present_value(item, "totalShareStatistics.likeCount")),
+                    "comments": _coerce_metric(_first_present_value(item, "totalShareStatistics.commentCount")),
+                    "reposts": _coerce_metric(_first_present_value(item, "totalShareStatistics.shareCount")),
+                    "views": _coerce_metric(_first_present_value(item, "totalShareStatistics.impressionCount")),
+                    "unique_views": _coerce_metric(
+                        _first_present_value(item, "totalShareStatistics.uniqueImpressionsCount")
+                    ),
+                    "clicks": _coerce_metric(_first_present_value(item, "totalShareStatistics.clickCount")),
+                },
+                "raw": _redact_secrets(item),
+            }
+            for item in result.elements
+        ],
+        "paging": result.paging,
+        "raw": {
+            "source": "official",
+            "organization": result.organization_urn,
+            "organization_share_statistics": raw,
+        },
     }
 
 
@@ -502,6 +674,19 @@ def social_action_success_data(result: SocialActionResult) -> dict[str, Any]:
             "completed_at": result.completed_at,
             "raw": _redact_secrets(result.raw),
         },
+    }
+
+
+def social_action_dry_run_data(*, action: str, target_id: str, planned: dict[str, Any]) -> dict[str, Any]:
+    """Build dry-run data for official social actions without a resource body."""
+    return {
+        "dry_run": True,
+        "action": action,
+        "target": {
+            "id": target_id,
+        },
+        "result": None,
+        "planned": planned,
     }
 
 
@@ -638,6 +823,18 @@ def _coerce_metric(value: Any, *, unknown_zero: bool = False) -> Optional[int]:
     if metric == 0 and unknown_zero:
         return None
     return metric
+
+
+def _sum_metric(items: Iterable[dict[str, Any]], path: str) -> Optional[int]:
+    total = 0
+    seen = False
+    for item in items:
+        value = _coerce_metric(_first_present_value(item, path))
+        if value is None:
+            continue
+        total += value
+        seen = True
+    return total if seen else None
 
 
 def _first_present_value(payload: dict[str, Any], *paths: str) -> Any:

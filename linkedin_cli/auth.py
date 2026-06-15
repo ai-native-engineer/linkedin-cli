@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
+import shlex
 from typing import Any
 from typing import Iterable
 
@@ -13,7 +15,9 @@ from requests.cookies import RequestsCookieJar
 
 from .config import AppConfig
 from .constants import COOKIE_REQUIRED_NAMES
+from .constants import DEFAULT_COOKIE_FILE
 from .constants import ENV_BROWSER
+from .constants import ENV_COOKIE_FILE
 from .constants import ENV_COOKIE_HEADER
 from .constants import ENV_JSESSIONID
 from .constants import ENV_LI_AT
@@ -42,11 +46,11 @@ class AuthSession:
 
     @property
     def li_at(self) -> str:
-        return self.cookie_jar.get("li_at", "")
+        return _first_cookie_value(self.cookie_jar, "li_at")
 
     @property
     def jsessionid(self) -> str:
-        return self.cookie_jar.get("JSESSIONID", "").strip('"')
+        return _first_cookie_value(self.cookie_jar, "JSESSIONID").strip('"')
 
     @property
     def cookie_string(self) -> str:
@@ -64,7 +68,7 @@ class AuthSession:
         return sorted({cookie.name for cookie in self.cookie_jar})
 
     def has_required_cookies(self) -> bool:
-        return all(self.cookie_jar.get(name) for name in COOKIE_REQUIRED_NAMES)
+        return _has_required_cookies(self.cookie_jar)
 
     def as_playwright_cookies(self) -> list[dict[str, object]]:
         cookies = []
@@ -93,13 +97,59 @@ def resolve_auth_session(config: AppConfig) -> AuthSession:
     if env_session is not None:
         return env_session
 
+    file_session = _load_from_cookie_file(config)
+    if file_session is not None:
+        return file_session
+
     browser_session = _load_from_browser(config)
     if browser_session is not None:
         return browser_session
 
     raise AuthenticationError(
-        "No LinkedIn cookies found. Set LINKEDIN_COOKIE_HEADER or LINKEDIN_LI_AT/LINKEDIN_JSESSIONID, or log into linkedin.com in a supported browser."
+        "No LinkedIn cookies found. Set LINKEDIN_COOKIE_HEADER, run `linkedin-cli auth "
+        "cookie-file --from-stdin`, set LINKEDIN_LI_AT/LINKEDIN_JSESSIONID, or log into "
+        "linkedin.com in a supported browser."
     )
+
+
+def default_cookie_file_path() -> Path:
+    """Return the default private cookie env-file path."""
+    return Path(DEFAULT_COOKIE_FILE).expanduser()
+
+
+def summarize_cookie_header(raw_header: str) -> dict[str, Any]:
+    """Summarize a Cookie header without exposing cookie values."""
+    parsed = _parse_cookie_header(raw_header.strip())
+    names = sorted(parsed)
+    missing = sorted(name for name in COOKIE_REQUIRED_NAMES if name not in parsed)
+    return {
+        "cookie_count": len(parsed),
+        "cookie_names": names,
+        "required_missing": missing,
+    }
+
+
+def write_cookie_header_file(path: Path, raw_header: str) -> dict[str, Any]:
+    """Write a full Cookie header to a private env file and return a sanitized summary."""
+    normalized = raw_header.strip()
+    summary = summarize_cookie_header(normalized)
+    if summary["required_missing"]:
+        missing = ", ".join(summary["required_missing"])
+        raise AuthenticationError(f"Cookie header is missing required cookies: {missing}.")
+
+    resolved = path.expanduser()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    resolved.parent.chmod(0o700)
+    rendered = (
+        "# linkedin-cli read-session cookies. Keep this file private.\n"
+        f"{ENV_COOKIE_HEADER}={shlex.quote(normalized)}\n"
+    )
+    resolved.write_text(rendered, encoding="utf-8")
+    resolved.chmod(0o600)
+    return {
+        **summary,
+        "path": str(resolved),
+    }
 
 
 def build_api_client(session: AuthSession, config: AppConfig):
@@ -303,7 +353,32 @@ def _load_from_cookie_header(config: AppConfig) -> AuthSession | None:
     raw_header = os.getenv(ENV_COOKIE_HEADER, "").strip()
     if not raw_header:
         return None
+    return _auth_session_from_cookie_header(raw_header, source="env-cookie-header", config=config)
 
+
+def _load_from_cookie_file(config: AppConfig) -> AuthSession | None:
+    path, explicit = _resolve_cookie_file_path()
+    if not path.exists():
+        if explicit:
+            raise AuthenticationError(f"{ENV_COOKIE_FILE} points to a missing file: {path}")
+        return None
+    try:
+        raw_header = _read_cookie_header_file(path)
+    except OSError as exc:
+        raise AuthenticationError(f"Could not read {ENV_COOKIE_FILE} file: {path}") from exc
+    if not raw_header:
+        raise AuthenticationError(
+            f"Cookie file does not contain {ENV_COOKIE_HEADER} or a raw Cookie header: {path}"
+        )
+    return _auth_session_from_cookie_header(raw_header, source="cookie-file", config=config)
+
+
+def _auth_session_from_cookie_header(
+    raw_header: str,
+    *,
+    source: str,
+    config: AppConfig,
+) -> AuthSession:
     jar = RequestsCookieJar()
     for name, value in _parse_cookie_header(raw_header).items():
         jar.set(
@@ -314,9 +389,46 @@ def _load_from_cookie_header(config: AppConfig) -> AuthSession | None:
         )
     if not _has_required_cookies(jar):
         raise AuthenticationError(
-            "LINKEDIN_COOKIE_HEADER was provided but does not include li_at and JSESSIONID."
+            f"{ENV_COOKIE_HEADER} was provided but does not include li_at and JSESSIONID."
         )
-    return AuthSession(cookie_jar=jar, source="env-cookie-header", proxy=config.runtime.proxy)
+    return AuthSession(cookie_jar=jar, source=source, proxy=config.runtime.proxy)
+
+
+def _resolve_cookie_file_path() -> tuple[Path, bool]:
+    raw_path = os.getenv(ENV_COOKIE_FILE, "").strip()
+    if raw_path:
+        return Path(raw_path).expanduser(), True
+    return default_cookie_file_path(), False
+
+
+def _read_cookie_header_file(path: Path) -> str:
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return ""
+    if not summarize_cookie_header(text)["required_missing"]:
+        return text
+    for line in text.splitlines():
+        value = _extract_cookie_header_assignment(line)
+        if value and not summarize_cookie_header(value)["required_missing"]:
+            return value
+    return ""
+
+
+def _extract_cookie_header_assignment(line: str) -> str | None:
+    stripped = line.strip()
+    if not stripped or stripped.startswith("#"):
+        return None
+    try:
+        tokens = shlex.split(stripped, comments=False, posix=True)
+    except ValueError:
+        return None
+    if tokens and tokens[0] == "export":
+        tokens = tokens[1:]
+    prefix = f"{ENV_COOKIE_HEADER}="
+    for token in tokens:
+        if token.startswith(prefix):
+            return token.split("=", 1)[1].strip()
+    return None
 
 
 def _load_from_env(config: AppConfig) -> AuthSession | None:
@@ -412,7 +524,15 @@ def _copy_cookie(target: RequestsCookieJar, cookie) -> None:
 
 
 def _has_required_cookies(jar: RequestsCookieJar) -> bool:
-    return all(jar.get(name) for name in COOKIE_REQUIRED_NAMES)
+    names = {cookie.name for cookie in jar}
+    return all(name in names for name in COOKIE_REQUIRED_NAMES)
+
+
+def _first_cookie_value(jar: RequestsCookieJar, name: str) -> str:
+    for cookie in jar:
+        if cookie.name == name:
+            return str(cookie.value or "")
+    return ""
 
 
 def _is_linkedin_domain(domain: str) -> bool:

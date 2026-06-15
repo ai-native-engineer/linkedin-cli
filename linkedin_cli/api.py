@@ -18,11 +18,17 @@ from .publisher import GetPostResult
 from .publisher import LinkedInPublishError
 from .publisher import LinkedInPublisher
 from .publisher import ListPostsResult
+from .publisher import OrganizationShareStatisticsResult
 from .publisher import PublishResult
 from .publisher import ReactionResult
 from .publisher import SocialActionResult
 from .publisher import SocialMetadataResult
 from .publisher import UpdateResult
+from .publisher import _normalize_actor_urn
+from .publisher import _normalize_non_empty
+from .publisher import normalize_comments_state
+from .publisher import normalize_reaction_type
+from .publisher import normalize_social_entity_id
 
 DRY_RUN_ACCESS_TOKEN = "DRY_RUN"
 DRY_RUN_AUTHOR_URN = "urn:li:person:DRY_RUN"
@@ -486,6 +492,57 @@ class LinkedInWriteAPI:
         """Publish a reshare through LinkedIn's official Posts API."""
         return self.publisher.post_reshare(text=text, visibility=visibility, parent=parent)
 
+    def plan_reply_post(
+        self,
+        *,
+        text: str,
+        reply_to: str,
+        parent_comment: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate a LinkedIn reply/comment without publishing it."""
+        body = text.strip()
+        if not body:
+            raise LinkedInPublishError(
+                "Reply text cannot be empty.",
+                code="invalid_request",
+                retryable=False,
+            )
+        normalized_reply_to = normalize_social_entity_id(reply_to)
+        normalized_parent = normalize_social_entity_id(parent_comment) if parent_comment else None
+        payload: dict[str, Any] = {
+            "actor": self.oauth.author_urn,
+            "message": {"text": body},
+        }
+        if normalized_parent:
+            payload["parentComment"] = normalized_parent
+        return {
+            "command": "post.reply",
+            "reply_to": normalized_reply_to,
+            "parent_comment": normalized_parent,
+            "text_length": len(body),
+            "media_count": 0,
+            "api": "linkedin.comments",
+            "author_urn": self.oauth.author_urn,
+            "linkedin_version": self.oauth.linkedin_version,
+            "payload": payload,
+        }
+
+    def create_reply_post(
+        self,
+        *,
+        text: str,
+        reply_to: str,
+        actor_urn: Optional[str] = None,
+        parent_comment: Optional[str] = None,
+    ) -> CommentResult:
+        """Create a LinkedIn reply through the official Comments API."""
+        return self.publisher.create_comment(
+            entity=reply_to,
+            text=text,
+            actor_urn=actor_urn,
+            parent_comment=parent_comment,
+        )
+
     def plan_update_post(self, *, post_id: str, text: str) -> dict[str, Any]:
         """Validate and build the official Posts API partial update payload."""
         normalized = self.publisher.normalize_post_id(post_id)
@@ -549,6 +606,38 @@ class LinkedInWriteAPI:
             parent_comment=parent_comment,
         )
 
+    def plan_comment_create(
+        self,
+        *,
+        entity: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+        parent_comment: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official comment creation."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        body = _normalize_non_empty(text, label="Comment text")
+        payload: dict[str, Any] = {
+            "actor": actor,
+            "object": entity_urn,
+            "message": {"text": body},
+        }
+        normalized_parent = None
+        if parent_comment:
+            normalized_parent = normalize_social_entity_id(parent_comment)
+            payload["parentComment"] = normalized_parent
+        return {
+            "command": "comment.create",
+            "entity": entity_urn,
+            "text_length": len(body),
+            "parent_comment": normalized_parent,
+            "api": "linkedin.comments",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+            "payload": payload,
+        }
+
     def update_comment(
         self,
         *,
@@ -565,6 +654,31 @@ class LinkedInWriteAPI:
             actor_urn=actor_urn,
         )
 
+    def plan_comment_update(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        text: str,
+        actor_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official comment update."""
+        entity_urn = normalize_social_entity_id(entity)
+        comment = _normalize_non_empty(comment_id, label="Comment id")
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        body = _normalize_non_empty(text, label="Comment text")
+        payload = {"patch": {"message": {"$set": {"text": body}}}}
+        return {
+            "command": "comment.update",
+            "entity": entity_urn,
+            "comment_id": comment,
+            "text_length": len(body),
+            "api": "linkedin.comments.update",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+            "payload": payload,
+        }
+
     def delete_comment(
         self,
         *,
@@ -578,6 +692,26 @@ class LinkedInWriteAPI:
             comment_id=comment_id,
             actor_urn=actor_urn,
         )
+
+    def plan_comment_delete(
+        self,
+        *,
+        entity: str,
+        comment_id: str,
+        actor_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official comment deletion."""
+        entity_urn = normalize_social_entity_id(entity)
+        comment = _normalize_non_empty(comment_id, label="Comment id")
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        return {
+            "command": "comment.delete",
+            "entity": entity_urn,
+            "comment_id": comment,
+            "api": "linkedin.comments.delete",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+        }
 
     def list_reactions(self, *, entity: str, count: int = 10, start: int = 0) -> CommentListResult:
         """Retrieve reactions through LinkedIn's official Reactions API."""
@@ -601,6 +735,31 @@ class LinkedInWriteAPI:
             actor_urn=actor_urn,
         )
 
+    def plan_reaction_create(
+        self,
+        *,
+        entity: str,
+        reaction_type: str = "like",
+        actor_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official reaction creation."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        api_reaction_type = normalize_reaction_type(reaction_type)
+        payload = {
+            "root": entity_urn,
+            "reactionType": api_reaction_type,
+        }
+        return {
+            "command": "reaction.create",
+            "entity": entity_urn,
+            "reaction_type": api_reaction_type,
+            "api": "linkedin.reactions",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+            "payload": payload,
+        }
+
     def delete_reaction(
         self,
         *,
@@ -610,9 +769,46 @@ class LinkedInWriteAPI:
         """Delete the current actor's reaction through LinkedIn's official Reactions API."""
         return self.publisher.delete_reaction(entity=entity, actor_urn=actor_urn)
 
+    def plan_reaction_delete(
+        self,
+        *,
+        entity: str,
+        actor_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official reaction deletion."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        return {
+            "command": "reaction.delete",
+            "entity": entity_urn,
+            "api": "linkedin.reactions.delete",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+        }
+
     def get_social_metadata(self, *, entity: str) -> SocialMetadataResult:
         """Retrieve social metadata through LinkedIn's official Social Metadata API."""
         return self.publisher.get_social_metadata(entity=entity)
+
+    def get_organization_share_statistics(
+        self,
+        *,
+        organization: str,
+        shares: tuple[str, ...] = (),
+        ugc_posts: tuple[str, ...] = (),
+        time_granularity: Optional[str] = None,
+        time_start: Optional[int] = None,
+        time_end: Optional[int] = None,
+    ) -> OrganizationShareStatisticsResult:
+        """Retrieve official organization share statistics."""
+        return self.publisher.get_organization_share_statistics(
+            organization=organization,
+            shares=shares,
+            ugc_posts=ugc_posts,
+            time_granularity=time_granularity,
+            time_start=time_start,
+            time_end=time_end,
+        )
 
     def update_comments_state(
         self,
@@ -627,6 +823,28 @@ class LinkedInWriteAPI:
             state=state,
             actor_urn=actor_urn,
         )
+
+    def plan_comments_state(
+        self,
+        *,
+        entity: str,
+        state: str,
+        actor_urn: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Validate and build a dry-run plan for official comments-state update."""
+        entity_urn = normalize_social_entity_id(entity)
+        actor = _normalize_actor_urn(actor_urn or self.oauth.author_urn)
+        comments_state = normalize_comments_state(state)
+        payload = {"patch": {"$set": {"commentsState": comments_state}}}
+        return {
+            "command": "social.comments_state",
+            "entity": entity_urn,
+            "comments_state": comments_state,
+            "api": "linkedin.social_metadata.update",
+            "author_urn": actor,
+            "linkedin_version": self.oauth.linkedin_version,
+            "payload": payload,
+        }
 
 
 __all__ = ["DeletePlan", "LinkedInWriteAPI", "PostPlan"]

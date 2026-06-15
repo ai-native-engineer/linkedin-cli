@@ -50,11 +50,12 @@ uv run playwright install chromium   # only for browser fallback
 
 ## Security
 
-- Treat cookies (`li_at`, `JSESSIONID`, `LINKEDIN_COOKIE_HEADER`) and OAuth access tokens as credentials.
+- Treat cookies (`li_at`, `JSESSIONID`, `LINKEDIN_COOKIE_HEADER`, `LINKEDIN_COOKIE_FILE`) and OAuth access tokens as credentials.
 - Never hardcode credentials in source, tests, fixtures, or examples. Never print raw cookie, token,
   or secret values.
 - Never commit cookies, tokens, HAR files, or browser storage state. The OAuth token file
-  (`~/.config/linkedin/oauth.json`) stays user-private.
+  (`~/.config/linkedin/oauth.json`) and read cookie file (`~/.config/linkedin/cookies.env`) stay
+  user-private.
 
 ## Operating Skills
 

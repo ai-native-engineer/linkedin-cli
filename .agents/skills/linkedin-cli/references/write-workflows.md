@@ -27,6 +27,7 @@ Validate official post payloads without side effects:
 ```bash
 uv run linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
 uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json
+uv run linkedin-cli post text --text-file post.md --visibility public --dry-run --json --output tmp/linkedin-post-text-dry-run.json
 uv run linkedin-cli post media --text "hello from linkedin-cli" --media image.png --visibility public --dry-run --json
 uv run linkedin-cli post multi-image --text-file post.md --media one.png --media two.jpg --dry-run --json
 uv run linkedin-cli post video --text-file post.md --video clip.mp4 --title "Demo" --dry-run --json
@@ -34,6 +35,9 @@ uv run linkedin-cli post document --text-file post.md --document deck.pdf --titl
 uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --dry-run --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --dry-run --json
+uv run linkedin-cli post quote urn:li:share:123 --text "worth reading" --dry-run --json
+uv run linkedin-cli post reply urn:li:ugcPost:123 --text-file reply.md --dry-run --json
+uv run linkedin-cli post repost urn:li:share:123 --dry-run --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --dry-run --json
 ```
 
@@ -49,22 +53,30 @@ uv run linkedin-cli post document --text-file post.md --document deck.pdf --titl
 uv run linkedin-cli post poll --text-file post.md --question "Pick one" --option Red --option Blue --json
 uv run linkedin-cli post article --text "read this" --url https://example.com/post --json
 uv run linkedin-cli post reshare urn:li:share:123 --text "worth reading" --json
+uv run linkedin-cli post quote urn:li:share:123 --text "worth reading" --json
+uv run linkedin-cli post reply urn:li:ugcPost:123 --text-file reply.md --json
 uv run linkedin-cli post update urn:li:share:123 --text "updated" --json
 uv run linkedin-cli post get urn:li:share:123 --json
-uv run linkedin-cli post list --count 10 --json
+uv run linkedin-cli post list --limit 10 --json
 ```
 
 Use official social action commands for comments, reactions, and comment state:
 
 ```bash
 uv run linkedin-cli comment list urn:li:ugcPost:123 --json
-uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --json
-uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated" --json
-uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --json
-uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --json
-uv run linkedin-cli reaction delete urn:li:ugcPost:123 --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --dry-run --json
+uv run linkedin-cli comment create urn:li:ugcPost:123 --text-file comment.md --dry-run --json --output tmp/linkedin-comment-create-dry-run.json
+uv run linkedin-cli comment update urn:li:ugcPost:123 987654321 --text "updated" --dry-run --json
+uv run linkedin-cli comment delete urn:li:ugcPost:123 987654321 --dry-run --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --dry-run --json
+uv run linkedin-cli reaction create urn:li:ugcPost:123 --type like --dry-run --json --output tmp/linkedin-reaction-create-dry-run.json
+uv run linkedin-cli reaction delete urn:li:ugcPost:123 --dry-run --json
 uv run linkedin-cli social metadata urn:li:ugcPost:123 --json
-uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --dry-run --json
+uv run linkedin-cli social comments-state urn:li:ugcPost:123 --state closed --dry-run --json --output tmp/linkedin-comments-state-dry-run.json
+uv run linkedin-cli insights media urn:li:ugcPost:123 --json
+uv run linkedin-cli insights organization urn:li:organization:123 --json
+uv run linkedin-cli insights user --json
 ```
 
 Delete through official LinkedIn APIs:
@@ -103,14 +115,14 @@ Save or unsave an activity:
 ```bash
 uv run linkedin save urn:li:activity:123
 uv run linkedin unsave urn:li:activity:123
-uv run linkedin-cli saved unsave urn:li:activity:123 --json
+uv run linkedin-cli saved unsave urn:li:activity:123 --dry-run --json
 ```
 
 Inspect saved posts before removing one:
 
 ```bash
 uv run linkedin-cli read saved --limit 20 --json
-uv run linkedin-cli saved unsave urn:li:activity:123 --json
+uv run linkedin-cli saved unsave urn:li:activity:123 --dry-run --json
 ```
 
 Comment on an activity:
@@ -121,7 +133,7 @@ uv run linkedin comment urn:li:activity:123 "nice post"
 
 ## Official Post Auth
 
-Official `post text`, `post media`, `post article`, `post reshare`, `post update`, `post get`, `post list`, and `post delete` load OAuth credentials from:
+Official `post text`, `post media`, `post article`, `post reshare`, `post quote`, `post update`, `post get`, `post list`, and `post delete` load OAuth credentials from:
 
 1. `LINKEDIN_ACCESS_TOKEN` + `LINKEDIN_AUTHOR_URN`
 2. `LINKEDIN_OAUTH_FILE`
@@ -208,12 +220,18 @@ Current implementation details:
 - `post video` initializes an official Videos API upload, uploads/finalizes the MP4, then publishes through Posts API
 - `post document` initializes an official Documents API upload, uploads the document, then publishes through Posts API
 - `post poll` publishes non-sponsored poll content through Posts API
-- `post article`, `post reshare`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
+- `post article`, `post reshare`, `post quote`, `post update`, `post get`, and `post list` use the official LinkedIn Posts API
+- `post quote` is a command alias for LinkedIn's official reshare payload with commentary
+- `post reply` is a command alias for LinkedIn's official Comments API
+- `post repost` returns an `unsupported` JSON contract boundary until commentary-free repost is implemented safely
 - `post delete` deletes through the official LinkedIn Posts API
 - `comment list/get/create/update/delete` use the official LinkedIn Comments API
 - `reaction list/get/create/delete` use the official LinkedIn Reactions API
 - `social metadata` and `social comments-state` use the official LinkedIn Social Metadata API
-- `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post document --dry-run`, `post poll --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post update --dry-run`, and `post delete --dry-run` validate planned official payloads without side effects
+- `insights media` returns Social Metadata API output in the common `insights.media` envelope
+- `insights organization` returns Organization Share Statistics API output in `insights.organization`
+- `insights user` returns an `unsupported` JSON contract boundary until personal account-level analytics are implemented
+- `post text --dry-run`, `post media --dry-run`, `post multi-image --dry-run`, `post video --dry-run`, `post document --dry-run`, `post poll --dry-run`, `post article --dry-run`, `post reshare --dry-run`, `post quote --dry-run`, `post reply --dry-run`, `post update --dry-run`, `post delete --dry-run`, `comment create/update/delete --dry-run`, `reaction create/delete --dry-run`, `social comments-state --dry-run`, and `saved unsave --dry-run` validate planned payloads without side effects
 - `linkedin_cli.LinkedInWriteAPI` exposes the same official write surface to Python callers
 - legacy `post "..."` uses Playwright-backed browser fallback
 - `comment` uses Playwright-backed browser fallback
@@ -271,6 +289,17 @@ uv run playwright install chromium
 
 - Treat all write operations as user-facing side effects.
 - Do not post, react, save, or comment in bulk.
+- Do not use browser automation for bulk saved-post cleanup, bulk unsave, bulk scraping, or repeated
+  page-draining loops. LinkedIn's User Agreement restricts scripts, robots, crawlers, scraping, and
+  unauthorized automated access; see https://www.linkedin.com/legal/user-agreement and
+  https://www.linkedin.com/help/linkedin/answer/a1341387.
+- Use `references/terms-automation-guardrail.md` for the reusable risk assessment and user-facing
+  response template.
+- If LinkedIn shows an automation, suspicious-activity, account-risk, checkpoint, restriction, or
+  "review tools" warning, stop immediately. Kill running Playwright/browser automation processes,
+  report what was already backed up or mutated, and do not try to bypass or continue the workflow.
+- After an automation warning, only advise manual cleanup in LinkedIn's official UI or a separately
+  reviewed official-API path. Do not restart the same browser-automation workflow in the same session.
 - Do not log secrets or browser cookies while debugging write failures.
 - Do not log OAuth access tokens while debugging official publishing failures.
 - Use `--dry-run --json` before official publishing when content was generated in the current session or needs user review.

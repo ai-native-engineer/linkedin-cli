@@ -13,6 +13,7 @@ from linkedin_cli.publisher import CommentListResult
 from linkedin_cli.publisher import CommentResult
 from linkedin_cli.publisher import GetPostResult
 from linkedin_cli.publisher import ListPostsResult
+from linkedin_cli.publisher import OrganizationShareStatisticsResult
 from linkedin_cli.publisher import PublishResult
 from linkedin_cli.publisher import ReactionResult
 from linkedin_cli.publisher import SocialActionResult
@@ -332,6 +333,34 @@ class FakePublisher:
     def get_social_metadata(self, *, entity):
         self.social_calls.append({"method": "metadata", "entity": entity})
         return SocialMetadataResult(entity_urn=entity, raw={"commentsState": "OPEN"})
+
+    def get_organization_share_statistics(
+        self,
+        *,
+        organization,
+        shares=(),
+        ugc_posts=(),
+        time_granularity=None,
+        time_start=None,
+        time_end=None,
+    ):
+        self.social_calls.append(
+            {
+                "method": "organization_statistics",
+                "organization": organization,
+                "shares": shares,
+                "ugc_posts": ugc_posts,
+                "time_granularity": time_granularity,
+                "time_start": time_start,
+                "time_end": time_end,
+            }
+        )
+        return OrganizationShareStatisticsResult(
+            organization_urn=organization,
+            elements=[{"totalShareStatistics": {"likeCount": 1}}],
+            paging={},
+            raw={"elements": []},
+        )
 
     def update_comments_state(self, *, entity, state, actor_urn=None):
         self.social_calls.append(
@@ -666,15 +695,52 @@ def test_comment_methods_delegate_to_publisher() -> None:
     comments = api.list_comments(entity="urn:li:ugcPost:1", count=2, start=0)
     comment = api.get_comment(entity="urn:li:ugcPost:1", comment_id="comment-1")
     created = api.create_comment(entity="urn:li:ugcPost:1", text="hello")
+    reply = api.create_reply_post(reply_to="urn:li:ugcPost:1", text="reply")
     updated = api.update_comment(entity="urn:li:ugcPost:1", comment_id="comment-1", text="updated")
     deleted = api.delete_comment(entity="urn:li:ugcPost:1", comment_id="comment-1")
 
     assert comments.elements == [{"id": "comment-1"}]
     assert comment.comment_id == "comment-1"
     assert created.comment_id == "comment-1"
+    assert reply.comment_id == "comment-1"
     assert updated.action == "comment.update"
     assert deleted.action == "comment.delete"
-    assert [call["method"] for call in fake.comment_calls] == ["list", "get", "create", "update", "delete"]
+    assert [call["method"] for call in fake.comment_calls] == ["list", "get", "create", "create", "update", "delete"]
+
+
+def test_plan_reply_post_to_dict() -> None:
+    api = _api(FakePublisher())
+
+    plan = api.plan_reply_post(text=" hello ", reply_to="123", parent_comment="urn:li:comment:1")
+
+    assert plan["command"] == "post.reply"
+    assert plan["reply_to"] == "urn:li:share:123"
+    assert plan["parent_comment"] == "urn:li:comment:1"
+    assert plan["text_length"] == 5
+    assert plan["api"] == "linkedin.comments"
+    assert plan["payload"]["message"]["text"] == "hello"
+
+
+def test_social_mutation_plan_methods_return_programmatic_payloads() -> None:
+    api = _api(FakePublisher())
+
+    comment_create = api.plan_comment_create(entity="urn:li:ugcPost:1", text=" hello ")
+    comment_update = api.plan_comment_update(entity="urn:li:ugcPost:1", comment_id="comment-1", text=" updated ")
+    comment_delete = api.plan_comment_delete(entity="urn:li:ugcPost:1", comment_id="comment-1")
+    reaction_create = api.plan_reaction_create(entity="urn:li:ugcPost:1", reaction_type="celebrate")
+    reaction_delete = api.plan_reaction_delete(entity="urn:li:ugcPost:1")
+    comments_state = api.plan_comments_state(entity="urn:li:ugcPost:1", state="closed")
+
+    assert comment_create["command"] == "comment.create"
+    assert comment_create["payload"]["message"]["text"] == "hello"
+    assert comment_update["command"] == "comment.update"
+    assert comment_update["payload"] == {"patch": {"message": {"$set": {"text": "updated"}}}}
+    assert comment_delete["api"] == "linkedin.comments.delete"
+    assert reaction_create["reaction_type"] == "PRAISE"
+    assert reaction_create["payload"] == {"root": "urn:li:ugcPost:1", "reactionType": "PRAISE"}
+    assert reaction_delete["api"] == "linkedin.reactions.delete"
+    assert comments_state["comments_state"] == "CLOSED"
+    assert comments_state["payload"] == {"patch": {"$set": {"commentsState": "CLOSED"}}}
 
 
 def test_reaction_methods_delegate_to_publisher() -> None:
@@ -698,11 +764,21 @@ def test_social_metadata_methods_delegate_to_publisher() -> None:
     api = _api(fake)
 
     metadata = api.get_social_metadata(entity="urn:li:ugcPost:1")
+    organization = api.get_organization_share_statistics(
+        organization="urn:li:organization:123",
+        shares=("urn:li:share:1",),
+        time_granularity="day",
+    )
     updated = api.update_comments_state(entity="urn:li:ugcPost:1", state="closed")
 
     assert metadata.raw["commentsState"] == "OPEN"
+    assert organization.organization_urn == "urn:li:organization:123"
     assert updated.raw["commentsState"] == "CLOSED"
-    assert [call["method"] for call in fake.social_calls] == ["metadata", "comments_state"]
+    assert [call["method"] for call in fake.social_calls] == [
+        "metadata",
+        "organization_statistics",
+        "comments_state",
+    ]
 
 
 def test_from_config_accepts_string_path(tmp_path, monkeypatch) -> None:

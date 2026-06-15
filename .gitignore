@@ -17,6 +17,8 @@ playwright-report/
 test-results/
 cookies.txt
 *.cookies
+cookies.env
+*.cookies.env
 *.har
 auth.json
 *.session.json

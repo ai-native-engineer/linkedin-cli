@@ -9,6 +9,7 @@ from linkedin_cli.auth import _session_from_cookie_jar
 from linkedin_cli.auth import collect_auth_diagnostics
 from linkedin_cli.auth import probe_read_access
 from linkedin_cli.auth import resolve_auth_session
+from linkedin_cli.auth import write_cookie_header_file
 from linkedin_cli.config import load_config
 from linkedin_cli.config import resolve_config_path
 
@@ -75,6 +76,41 @@ def test_resolve_auth_session_from_minimal_env(monkeypatch) -> None:
     assert session.cookie_count == 2
     assert session.li_at == "abc123"
     assert session.jsessionid == "ajax:123"
+
+
+def test_resolve_auth_session_from_cookie_file(monkeypatch, tmp_path: Path) -> None:
+    config = load_config()
+    cookie_path = tmp_path / "cookies.env"
+    cookie_path.write_text(
+        'LINKEDIN_COOKIE_HEADER=\'li_at=abc123; JSESSIONID="ajax:123"; li_theme=light\'\n',
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("LINKEDIN_COOKIE_HEADER", raising=False)
+    monkeypatch.delenv("LINKEDIN_LI_AT", raising=False)
+    monkeypatch.delenv("LINKEDIN_JSESSIONID", raising=False)
+    monkeypatch.setenv("LINKEDIN_COOKIE_FILE", str(cookie_path))
+
+    session = resolve_auth_session(config)
+
+    assert session.source == "cookie-file"
+    assert session.cookie_count == 3
+    assert session.li_at == "abc123"
+    assert session.jsessionid == "ajax:123"
+
+
+def test_write_cookie_header_file_uses_private_permissions(tmp_path: Path) -> None:
+    cookie_path = tmp_path / "linkedin" / "cookies.env"
+
+    summary = write_cookie_header_file(
+        cookie_path,
+        'li_at=abc123; JSESSIONID="ajax:123"; li_theme=light',
+    )
+
+    assert summary["cookie_count"] == 3
+    assert summary["required_missing"] == []
+    assert cookie_path.stat().st_mode & 0o777 == 0o600
+    assert cookie_path.parent.stat().st_mode & 0o777 == 0o700
+    assert "LINKEDIN_COOKIE_HEADER=" in cookie_path.read_text(encoding="utf-8")
 
 
 def test_session_from_cookie_jar_keeps_full_linkedin_cookie_set() -> None:

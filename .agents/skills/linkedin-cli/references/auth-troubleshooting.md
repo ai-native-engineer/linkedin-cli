@@ -17,14 +17,17 @@
 
 1. `LINKEDIN_COOKIE_HEADER`
 2. `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID`
-3. Browser cookie extraction
+3. `LINKEDIN_COOKIE_FILE` or the default `~/.config/linkedin/cookies.env`
+4. Browser cookie extraction
 
 Recommended baseline:
 
 ```bash
-export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; ...'
+uv run linkedin-cli auth cookie-file --from-stdin
 uv run linkedin-cli auth-status
 ```
+
+Paste the full `Cookie` request header into stdin, then press `Ctrl-D`. This keeps the secret out of shell history and writes a private `600` file.
 
 Minimal environment fallback:
 
@@ -39,6 +42,7 @@ uv run linkedin-cli auth-status
 Relevant variables:
 
 - `LINKEDIN_COOKIE_HEADER`
+- `LINKEDIN_COOKIE_FILE`
 - `LINKEDIN_LI_AT`
 - `LINKEDIN_JSESSIONID`
 - `LINKEDIN_BROWSER`
@@ -120,6 +124,7 @@ Healthy output usually includes:
 Important summary fields:
 
 - `source=env-cookie-header`, `source=env`, or `source=browser`
+- `source=cookie-file` when `~/.config/linkedin/cookies.env` or `LINKEDIN_COOKIE_FILE` was used
 - `browser=<name>` when browser extraction was used
 - `identity=<public-id-or-name>` when validation was able to resolve the account
 - `cookies=<count>` to gauge whether you only have the minimum pair or a fuller cookie jar
@@ -128,13 +133,19 @@ Important summary fields:
 
 `No LinkedIn cookies found`
 
-- Set `LINKEDIN_COOKIE_HEADER`, or
+- Run `uv run linkedin-cli auth cookie-file --from-stdin`, or
+- set `LINKEDIN_COOKIE_HEADER`, or
 - export `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID`, or
 - log into LinkedIn in a supported local browser
 
 `LINKEDIN_COOKIE_HEADER was provided but does not include li_at and JSESSIONID`
 
 - Replace the header with the full request `cookie` header from a logged-in session
+
+`Cookie file does not contain LINKEDIN_COOKIE_HEADER or a raw Cookie header`
+
+- Recreate it with `uv run linkedin-cli auth cookie-file --from-stdin`
+- Or set `LINKEDIN_COOKIE_FILE` to the intended file before running `auth-status`
 
 `LinkedIn session is missing required cookies`
 

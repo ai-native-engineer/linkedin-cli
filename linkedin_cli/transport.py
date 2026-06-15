@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import re
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -17,6 +19,10 @@ from .config import AppConfig
 from .constants import API_BASE_URL
 from .constants import DEFAULT_HEADERS
 from .constants import VOYAGER_API_BASE_URL
+from .structmatch import find_first_key
+from .structmatch import find_in_included
+from .structmatch import safe_int
+from .structmatch import type_matches
 
 
 REDIRECT_STATUS_CODES = {301, 302, 303, 307, 308}
@@ -145,10 +151,21 @@ class LinkedInTransport:
             headers={"accept": "application/vnd.linkedin.normalized+json+2.1"},
         )
         raw_posts = payload.get("included", [])
-        raw_urns = payload.get("data", {}).get("*elements", [])
         posts = parse_list_raw_posts(raw_posts, API_BASE_URL)
-        urns = parse_list_raw_urns(raw_urns)
-        return get_list_posts_sorted_without_promoted(urns, posts)
+        # Find the element-ref list wherever Voyager nests it instead of pinning the
+        # fixed `data.*elements` chain, and never let one malformed ref (a bare urn
+        # the vendored parser chokes on) crash the whole feed — fall back to the
+        # unsorted posts, mirroring `_parse_feed_like_posts`.
+        raw_urns = self._extract_element_refs(payload)
+        if posts and raw_urns:
+            try:
+                urns = parse_list_raw_urns(raw_urns)
+                sorted_posts = get_list_posts_sorted_without_promoted(urns, posts)
+                if sorted_posts:
+                    return sorted_posts
+            except Exception:
+                pass
+        return posts
 
     def get_feed_posts(self, limit: int) -> list[dict[str, Any]]:
         return self.fetch_feed_posts(limit)
@@ -241,14 +258,21 @@ class LinkedInTransport:
             for item in included
             if isinstance(item, dict) and item.get("entityUrn")
         }
-        profile = next(
-            (
-                item
-                for item in included
-                if isinstance(item, dict)
-                and item.get("$type") == "com.linkedin.voyager.dash.identity.profile.Profile"
-            ),
-            None,
+        # Anchor on the stable type tail and the `fsd_profile` URN family rather than
+        # the byte-exact dash namespace, which LinkedIn versions aggressively. Prefer
+        # the entry matching this public id when several profiles are embedded.
+        profile = (
+            find_in_included(
+                included,
+                lambda item: type_matches(item, ".profile.Profile")
+                and item.get("publicIdentifier") == public_id,
+            )
+            or find_in_included(included, lambda item: type_matches(item, ".profile.Profile"))
+            or find_in_included(
+                included,
+                lambda item: "fsd_profile" in str(item.get("entityUrn") or "")
+                and bool(item.get("firstName")),
+            )
         )
         if profile is None:
             raise LinkedInTransportError(
@@ -303,20 +327,39 @@ class LinkedInTransport:
                 continue
             payloads.append(payload)
             if isinstance(payload, dict):
-                body_id = payload.get("body")
-                if isinstance(body_id, str) and body_id in code_map:
-                    body_payload = self._load_json_text(code_map[body_id])
-                    if body_payload is not None:
-                        payloads.append(body_payload)
+                # Follow ANY string value that points at another embedded <code>
+                # block, not just the literal `body` key, so a renamed pointer still
+                # resolves the hydration blob.
+                for value in payload.values():
+                    if isinstance(value, str) and value in code_map:
+                        ref_payload = self._load_json_text(code_map[value])
+                        if ref_payload is not None:
+                            payloads.append(ref_payload)
 
         for tag in soup.find_all("script"):
             text = tag.get_text(strip=True)
-            if not text or "linkedin" not in text.lower():
+            if not text:
                 continue
             payload = self._load_json_text(text)
-            if payload is not None:
+            if payload is None:
+                continue
+            # Include by data SHAPE (an included/data hydration blob) rather than the
+            # brand word alone, so a payload moved into <script type="application/json">
+            # or one that only carries urns is still picked up.
+            if self._looks_like_hydration(payload) or "linkedin" in text.lower():
                 payloads.append(payload)
         return payloads
+
+    @staticmethod
+    def _looks_like_hydration(payload: Any) -> bool:
+        if isinstance(payload, dict):
+            return any(key in payload for key in ("included", "data"))
+        if isinstance(payload, list):
+            return any(
+                isinstance(item, dict) and any(key in item for key in ("included", "data"))
+                for item in payload
+            )
+        return False
 
     def _extract_posts_from_payload(self, payload: Any) -> list[dict[str, Any]]:
         posts: list[dict[str, Any]] = []
@@ -441,31 +484,56 @@ class LinkedInTransport:
         return str(raw).strip()
 
     def _find_profile_payload(self, code_map: dict[str, str], public_id: str) -> dict[str, Any]:
-        vanity_markers = {
-            f"vanityName:{public_id}",
-            f"vanityName%3A{public_id}",
-        }
+        resource_re = re.compile(r"identitydashprofiles", re.I)
+        vanity_re = re.compile(rf"vanityName(:|%3A){re.escape(public_id)}", re.I)
+        # 1) Precise path: a metadata block naming the profiles resource for this
+        #    vanity. Substring/regex (not an exact token) so a versioned resource
+        #    name (`...ProfilesV2`) still matches, and one regex covers both
+        #    `vanityName:` and the url-encoded `vanityName%3A`.
         for code_text in code_map.values():
-            if "voyagerIdentityDashProfiles" not in code_text:
+            if not resource_re.search(code_text) or not vanity_re.search(code_text):
                 continue
-            if not any(marker in code_text for marker in vanity_markers):
-                continue
-            try:
-                metadata = json.loads(code_text)
-            except json.JSONDecodeError:
-                continue
-            body_id = metadata.get("body")
-            body_text = code_map.get(body_id or "")
-            if not body_text:
-                continue
-            try:
-                return json.loads(body_text)
-            except json.JSONDecodeError as exc:
-                raise LinkedInTransportError(
-                    f"LinkedIn embedded an unreadable profile payload for {public_id}."
-                ) from exc
+            payload = self._resolve_code_body(code_map, code_text)
+            if isinstance(payload, dict):
+                return payload
+        # 2) Shape-driven fallback: any metadata->body pair whose body actually
+        #    carries a Profile-typed / fsd_profile item, regardless of the resource
+        #    string. Survives a wholesale resource rename.
+        for code_text in code_map.values():
+            payload = self._resolve_code_body(code_map, code_text)
+            if isinstance(payload, dict) and self._payload_has_profile(payload):
+                return payload
         raise LinkedInTransportError(
             f"LinkedIn profile page did not expose an embedded profile payload for {public_id}."
+        )
+
+    def _resolve_code_body(self, code_map: dict[str, str], code_text: str) -> Any:
+        """Parse a metadata <code> block and follow its body pointer to the sibling
+        <code> block that holds the actual payload. Returns None on any miss."""
+        try:
+            metadata = json.loads(code_text)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(metadata, dict):
+            return None
+        body_id = metadata.get("body")
+        body_text = code_map.get(body_id) if isinstance(body_id, str) else None
+        if not body_text:
+            return None
+        return self._load_json_text(body_text)
+
+    @staticmethod
+    def _payload_has_profile(payload: dict[str, Any]) -> bool:
+        included = payload.get("included")
+        if not isinstance(included, list):
+            return False
+        return (
+            find_in_included(
+                included,
+                lambda item: type_matches(item, ".profile.Profile")
+                or "fsd_profile" in str(item.get("entityUrn") or ""),
+            )
+            is not None
         )
 
     def _resolve_geo_name(
@@ -473,23 +541,47 @@ class LinkedInTransport:
         geo_location: Any,
         entities_by_urn: dict[str, dict[str, Any]],
     ) -> str:
+        geo_urn = self._geo_pointer(geo_location)
+        if not geo_urn:
+            return ""
+        geo = entities_by_urn.get(geo_urn) or self._entity_by_urn_suffix(geo_urn, entities_by_urn)
+        if not isinstance(geo, dict):
+            return ""
+        return (
+            geo.get("defaultLocalizedNameWithoutCountryName")
+            or geo.get("defaultLocalizedName")
+            or find_first_key(geo, "localizedName", "name", max_depth=3)
+            or ""
+        )
+
+    @staticmethod
+    def _geo_pointer(geo_location: Any) -> str:
+        """Resolve the geo reference URN without pinning the `*geo` key — take the
+        first `*`-prefixed reference value so a renamed pointer (`*geoLocation`) still
+        resolves."""
+        if isinstance(geo_location, str):
+            return geo_location
         if isinstance(geo_location, dict):
-            geo_urn = geo_location.get("*geo")
-            if geo_urn and geo_urn in entities_by_urn:
-                geo = entities_by_urn[geo_urn]
-                return (
-                    geo.get("defaultLocalizedNameWithoutCountryName")
-                    or geo.get("defaultLocalizedName")
-                    or ""
-                )
-        if isinstance(geo_location, str) and geo_location in entities_by_urn:
-            geo = entities_by_urn[geo_location]
-            return (
-                geo.get("defaultLocalizedNameWithoutCountryName")
-                or geo.get("defaultLocalizedName")
-                or ""
-            )
+            direct = geo_location.get("*geo")
+            if isinstance(direct, str) and direct:
+                return direct
+            for key, value in geo_location.items():
+                if isinstance(key, str) and key.startswith("*") and isinstance(value, str) and value:
+                    return value
         return ""
+
+    @staticmethod
+    def _entity_by_urn_suffix(
+        geo_urn: str,
+        entities_by_urn: dict[str, dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        last_segment = geo_urn.rsplit(":", 1)[-1]
+        if not last_segment:
+            return None
+        for urn, entity in entities_by_urn.items():
+            if isinstance(urn, str) and urn.rsplit(":", 1)[-1] == last_segment:
+                return entity
+        return None
 
     def _extract_best_image_url(self, payload: Any) -> str:
         if not isinstance(payload, dict):
@@ -506,10 +598,18 @@ class LinkedInTransport:
                         if not isinstance(artifact, dict):
                             continue
                         segment = artifact.get("fileIdentifyingUrlPathSegment")
-                        if not isinstance(segment, str) or not segment:
+                        if isinstance(segment, str) and segment:
+                            # safe_int so a non-numeric width ('800px') degrades to 0
+                            # instead of crashing the entire profile read.
+                            candidates.append((safe_int(artifact.get("width")), f"{root_url}{segment}"))
                             continue
-                        width = int(artifact.get("width") or 0)
-                        candidates.append((width, f"{root_url}{segment}"))
+                        direct = (
+                            artifact.get("url")
+                            or artifact.get("expiringUrl")
+                            or artifact.get("displayImageUrl")
+                        )
+                        if isinstance(direct, str) and direct:
+                            candidates.append((safe_int(artifact.get("width")), direct))
                 for value in node.values():
                     walk(value)
             elif isinstance(node, list):
@@ -584,16 +684,20 @@ def _classify_redirect(response: requests.Response) -> str:
     location = response.headers.get("location") or ""
     if not location:
         return "empty-redirect"
-    if location == str(response.url):
+    # Resolve relative `Location: /checkpoint/...` against the request URL so a
+    # self-redirect or auth path is detected regardless of absolute/relative form,
+    # and classify on the path alone so tokens in a query string never false-match.
+    absolute = urljoin(str(response.url), location)
+    if absolute == str(response.url):
         return "self-redirect-loop"
-    lowered = location.lower()
-    if "checkpoint" in lowered:
+    path = urlparse(absolute).path.lower()
+    if "checkpoint" in path:
         return "checkpoint"
-    if "login" in lowered:
+    if "login" in path:  # also covers /uas/login
         return "login"
-    if "authwall" in lowered:
+    if "authwall" in path:
         return "authwall"
-    if "challenge" in lowered:
+    if "challenge" in path or "/security" in path:
         return "challenge"
     return "redirect"
 

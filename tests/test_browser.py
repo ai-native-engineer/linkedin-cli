@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
+from linkedin_cli.browser import _SAVED_POSTS_SCRIPT
+from linkedin_cli.browser import _activity_url
 from linkedin_cli.browser import _browser_state_path
 from linkedin_cli.browser import _chrome_launch_candidates
 from linkedin_cli.browser import _load_login_credentials
@@ -10,6 +13,7 @@ from linkedin_cli.browser import _looks_logged_out
 from linkedin_cli.browser import _menu_contains_any
 from linkedin_cli.browser import _save_action_labels
 from linkedin_cli.browser import _save_action_selectors
+from linkedin_cli.browser import LinkedInBrowserFallback
 
 
 def test_chrome_launch_candidates_prefer_installed_chrome_channel() -> None:
@@ -71,6 +75,78 @@ def test_load_login_credentials_prefers_env(monkeypatch) -> None:
     assert credentials.username == "user@example.com"
     assert credentials.password == "secret"
     assert credentials.source == "LINKEDIN_USERNAME/LINKEDIN_PASSWORD"
+
+
+def test_type_first_uses_keyboard_insert_text() -> None:
+    events = []
+
+    class FakeTarget:
+        def wait_for(self, **kwargs):
+            events.append(("wait_for", kwargs["state"]))
+
+        def click(self, **_kwargs):
+            events.append(("click",))
+
+    class FakeLocator:
+        def count(self):
+            return 1
+
+        def nth(self, index):
+            assert index == 0
+            return FakeTarget()
+
+    class FakeKeyboard:
+        def press(self, key):
+            events.append(("press", key))
+
+        def insert_text(self, value):
+            events.append(("insert_text", value))
+
+    class FakePage:
+        keyboard = FakeKeyboard()
+
+        def locator(self, selector):
+            assert selector == "input[name='session_password']"
+            return FakeLocator()
+
+    subject = SimpleNamespace(config=SimpleNamespace(rate_limit=SimpleNamespace(timeout=20)))
+
+    LinkedInBrowserFallback._type_first(
+        subject,
+        FakePage(),
+        ["input[name='session_password']"],
+        "secret",
+    )
+
+    assert events == [
+        ("wait_for", "visible"),
+        ("click",),
+        ("press", "ControlOrMeta+A"),
+        ("press", "Backspace"),
+        ("insert_text", "secret"),
+    ]
+
+
+def test_activity_url_handles_compound_and_bare_identifiers() -> None:
+    assert (
+        _activity_url("urn:li:fsd_update:(urn:li:activity:55,FEED)")
+        == "https://www.linkedin.com/feed/update/urn:li:activity:55/"
+    )
+    assert (
+        _activity_url("urn:li:activity:99")
+        == "https://www.linkedin.com/feed/update/urn:li:activity:99/"
+    )
+    assert _activity_url("https://www.linkedin.com/feed/update/urn:li:activity:7/") == (
+        "https://www.linkedin.com/feed/update/urn:li:activity:7/"
+    )
+
+
+def test_saved_posts_script_anchors_on_activity_href_not_main_li() -> None:
+    # The scrape must anchor on the durable activity permalink and walk up via
+    # closest(), not pin the brittle `main li` DOM path.
+    assert 'a[href*="/feed/update/urn:li:activity:"]' in _SAVED_POSTS_SCRIPT
+    assert ".closest(" in _SAVED_POSTS_SCRIPT
+    assert "main li" not in _SAVED_POSTS_SCRIPT
 
 
 def test_menu_contains_any_uses_exact_visible_menu_labels() -> None:

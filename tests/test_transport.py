@@ -42,6 +42,194 @@ def test_classify_redirect_marks_session_rejected() -> None:
     assert _classify_redirect(response) == "self-redirect-loop"
 
 
+def test_classify_redirect_handles_relative_and_synonym_paths() -> None:
+    base = "https://www.linkedin.com/voyager/api/feed/updatesV2"
+    # relative Location resolved against the request URL
+    assert _classify_redirect(_response(302, url=base, location="/checkpoint/lg/login")) == "checkpoint"
+    assert _classify_redirect(_response(302, url=base, location="/uas/login")) == "login"
+    assert _classify_redirect(_response(302, url=base, location="/security/challenge")) == "challenge"
+    # tokens that only appear in a query string must not false-match the path
+    assert _classify_redirect(_response(302, url=base, location="/feed/?from=login")) == "redirect"
+
+
+def _transport() -> LinkedInVoyagerTransport:
+    config = load_config()
+    jar = RequestsCookieJar()
+    jar.set("JSESSIONID", '"ajax:123"', domain=".linkedin.com", path="/")
+    return LinkedInVoyagerTransport(AuthSession(cookie_jar=jar, source="env"), config)
+
+
+def test_extract_best_image_url_tolerates_non_numeric_width() -> None:
+    transport = _transport()
+    picture = {
+        "vectorImage": {
+            "rootUrl": "https://media.licdn.com/",
+            "artifacts": [
+                {"width": "100px", "fileIdentifyingUrlPathSegment": "small.jpg"},
+                {"width": "400px", "fileIdentifyingUrlPathSegment": "large.jpg"},
+            ],
+        }
+    }
+
+    # A non-numeric width must degrade to a 0-width candidate, never raise.
+    assert transport._extract_best_image_url(picture) == "https://media.licdn.com/large.jpg"
+
+
+def test_resolve_geo_name_tolerates_renamed_geo_pointer() -> None:
+    transport = _transport()
+    entities = {
+        "urn:li:fsd_geo:1": {
+            "entityUrn": "urn:li:fsd_geo:1",
+            "defaultLocalizedNameWithoutCountryName": "Seoul",
+        }
+    }
+
+    # A renamed reference pointer (`*geoLocation` instead of `*geo`) still resolves.
+    assert transport._resolve_geo_name({"*geoLocation": "urn:li:fsd_geo:1"}, entities) == "Seoul"
+    # And a URN-namespace shift falls back to a last-segment match.
+    assert transport._resolve_geo_name({"*geo": "urn:li:geo:1"}, entities) == "Seoul"
+
+
+def test_fetch_feed_posts_falls_back_when_sorting_raises(monkeypatch) -> None:
+    transport = _transport()
+    payload = {
+        "included": [
+            {
+                "entityUrn": "urn:li:activity:1",
+                "url": "https://www.linkedin.com/feed/update/urn:li:activity:1/",
+            }
+        ],
+        "data": {"*elements": ["urn:li:activity:1"]},
+    }
+    monkeypatch.setattr(transport, "_get_json", lambda *a, **k: payload)
+    monkeypatch.setattr(
+        "linkedin_cli.transport.parse_list_raw_posts",
+        lambda raw, base: [{"entityUrn": "urn:li:activity:1", "url": "u"}],
+    )
+
+    def boom(_refs):
+        raise IndexError("malformed ref")
+
+    monkeypatch.setattr("linkedin_cli.transport.parse_list_raw_urns", boom)
+
+    # One malformed ref must not crash the feed; fall back to the unsorted posts.
+    posts = transport.fetch_feed_posts(10)
+    assert posts == [{"entityUrn": "urn:li:activity:1", "url": "u"}]
+
+
+def test_fetch_profile_matches_renamed_dash_namespace(monkeypatch) -> None:
+    transport = _transport()
+    body = {
+        "data": {"data": {}},
+        "included": [
+            {
+                "$type": "com.linkedin.voyager.dash.identity.profileV2.Profile",
+                "entityUrn": "urn:li:fsd_profile:123",
+                "publicIdentifier": "jane-doe",
+                "firstName": "Jane",
+                "lastName": "Doe",
+            }
+        ],
+    }
+    html = (
+        "<html><body>"
+        '<code id="datalet-bpr-guid-1">'
+        + json.dumps(
+            {
+                "request": (
+                    "/voyager/api/graphql?variables=(vanityName:jane-doe)"
+                    "&queryId=voyagerIdentityDashProfiles.hash"
+                ),
+                "body": "bpr-guid-1",
+            }
+        )
+        + "</code>"
+        + '<code id="bpr-guid-1">'
+        + json.dumps(body)
+        + "</code>"
+        + "</body></html>"
+    )
+    monkeypatch.setattr(
+        transport,
+        "_request_profile_page",
+        lambda public_id: _html_response("https://www.linkedin.com/in/jane-doe/", html),
+    )
+
+    # A versioned `profileV2` namespace still resolves via the fsd_profile predicate.
+    payload = transport.fetch_profile("jane-doe")
+    assert payload["firstName"] == "Jane"
+    assert payload["publicIdentifier"] == "jane-doe"
+
+
+def test_fetch_profile_falls_back_when_resource_string_renamed(monkeypatch) -> None:
+    transport = _transport()
+    body = {
+        "included": [
+            {
+                "$type": "com.linkedin.voyager.dash.identity.profile.Profile",
+                "entityUrn": "urn:li:fsd_profile:777",
+                "publicIdentifier": "jane-doe",
+                "firstName": "Jane",
+                "lastName": "Doe",
+            }
+        ]
+    }
+    # The metadata block names a different resource (no `identitydashprofiles`),
+    # so only the data-shape fallback can locate the profile body.
+    html = (
+        "<html><body>"
+        '<code id="meta-1">'
+        + json.dumps({"request": "/voyager/api/graphql?queryId=someOtherResource.hash", "body": "body-1"})
+        + "</code>"
+        + '<code id="body-1">'
+        + json.dumps(body)
+        + "</code>"
+        + "</body></html>"
+    )
+    monkeypatch.setattr(
+        transport,
+        "_request_profile_page",
+        lambda public_id: _html_response("https://www.linkedin.com/in/jane-doe/", html),
+    )
+
+    payload = transport.fetch_profile("jane-doe")
+    assert payload["firstName"] == "Jane"
+    assert payload["publicIdentifier"] == "jane-doe"
+
+
+def test_fetch_saved_posts_reads_script_application_json(monkeypatch) -> None:
+    transport = _transport()
+    body = {
+        "included": [
+            {
+                "entityUrn": "urn:li:activity:888",
+                "url": "https://www.linkedin.com/feed/update/urn:li:activity:888/",
+                "commentary": {"text": "Saved via script tag"},
+                "actor": {
+                    "name": {"text": "Jane Doe"},
+                    "navigationUrl": "https://www.linkedin.com/in/jane-doe/",
+                },
+            }
+        ]
+    }
+    # Hydration blob lives in <script type="application/json">, not <code id>.
+    html = (
+        "<html><body>"
+        '<script type="application/json">'
+        + json.dumps(body)
+        + "</script>"
+        + "</body></html>"
+    )
+    monkeypatch.setattr(
+        transport,
+        "_request_saved_posts_page",
+        lambda: _html_response("https://www.linkedin.com/my-items/saved-posts/", html),
+    )
+
+    posts = transport.fetch_saved_posts(10)
+    assert any(post.get("entityUrn") == "urn:li:activity:888" for post in posts)
+
+
 def test_build_headers_includes_csrf_token() -> None:
     config = load_config()
     jar = RequestsCookieJar()

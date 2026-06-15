@@ -38,15 +38,18 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 |---|---|---:|---|
 | Comment list | `comment list` | implemented | Official Comments API; permission dependent. |
 | Comment get | `comment get` | implemented | Official Comments API; permission dependent. |
-| Comment create | `comment create` | implemented | Official Comments API; prefers official over browser fallback. |
-| Comment update | `comment update` | implemented | Official Comments API; permission dependent. |
-| Comment delete | `comment delete` | implemented | Official Comments API delete with actor parameter. |
+| Comment create | `comment create` | implemented + dry-run | Official Comments API; prefers official over browser fallback. |
+| Comment update | `comment update` | implemented + dry-run | Official Comments API; permission dependent. |
+| Comment delete | `comment delete` | implemented + dry-run | Official Comments API delete with actor parameter. |
 | Reaction list | `reaction list` | implemented | Official Reactions API; permission dependent. |
 | Reaction get | `reaction get` | implemented | Official Reactions API; permission dependent. |
-| Reaction create | `reaction create` | implemented | Official Reactions API; prefers official over legacy `react`. |
-| Reaction delete | `reaction delete` | implemented | Official Reactions API; prefers official over legacy `unreact`. |
+| Reaction create | `reaction create` | implemented + dry-run | Official Reactions API; prefers official over legacy `react`. |
+| Reaction delete | `reaction delete` | implemented + dry-run | Official Reactions API; prefers official over legacy `unreact`. |
 | Social metadata | `social metadata` | implemented | Counts, summaries, comment settings. |
-| Comments state | `social comments-state` | implemented | Open/close comments if permitted. |
+| Comments state | `social comments-state` | implemented + dry-run | Open/close comments if permitted. |
+| Media insights | `insights media` | implemented | Insights-compatible envelope over official Social Metadata API. |
+| Organization insights | `insights organization` | implemented | Official Organization Share Statistics API. Permission dependent. |
+| Personal account insights | `insights user` | unsupported boundary | Command exists and returns `unsupported` until personal account-level analytics are implemented. |
 
 ## Unofficial Personal Read APIs
 
@@ -86,5 +89,6 @@ Official references:
 - LinkedIn Documents API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/documents-api
 - LinkedIn Poll API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/poll-post-api
 - LinkedIn Comments API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/comments-api
+- LinkedIn Organization Share Statistics API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/organizations/share-statistics
 - LinkedIn Reactions API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/reactions-api
 - LinkedIn Social Metadata API: https://learn.microsoft.com/en-us/linkedin/marketing/community-management/shares/social-metadata-api

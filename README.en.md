@@ -20,7 +20,7 @@
 
 Tags: `linkedin`, `cli`, `sns-json-v1`, `unofficial-read`, `official-post`, `personal-workflow`, `oauth`, `comments`, `reactions`, `media`
 
-> This project is not affiliated with LinkedIn. Read commands use unofficial web behavior and may break when LinkedIn changes its internal endpoints. Review the terms that apply to your account.
+> This project is not affiliated with LinkedIn. Read commands use unofficial web behavior and may break when LinkedIn changes its internal endpoints. Review the Terms/ToS that apply to your account; compliance is the user's responsibility.
 
 ## What It Does
 
@@ -47,10 +47,14 @@ Write:
 - Publish non-sponsored polls through the Posts API.
 - Publish article/link posts.
 - Reshare existing posts.
+- Create replies with the official Comments API through `post reply`.
 - Update post commentary.
 - List, retrieve, create, update, and delete comments through the official Comments API.
 - List, retrieve, create, and delete reactions through the official Reactions API.
 - Retrieve social metadata and open/close comments through the official Social Metadata API.
+- Expose Social Metadata API results through the `insights.media` contract.
+- Expose Organization Share Statistics API results through the `insights.organization` contract.
+- Return a structured `unsupported` envelope for personal account-level `insights.user`.
 - Retrieve one post or list posts by author when the token has the required read permission.
 - Delete your own official posts by share/ugcPost URN, numeric share id, or feed update URL.
 - Unsave saved posts.
@@ -88,10 +92,10 @@ Check the CLI:
 linkedin-cli --help
 ```
 
-Read commands need a LinkedIn web session. The most reliable option is a full cookie header copied from your logged-in browser:
+Read commands need a LinkedIn web session. The most reliable option is a full Cookie header copied from your logged-in browser and saved to a private cookie file. Run the command below, paste the header, then press `Ctrl-D` to finish stdin.
 
 ```bash
-export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; bcookie="..."; bscookie="..."; ...'
+linkedin-cli auth cookie-file --from-stdin
 linkedin-cli auth-status
 ```
 
@@ -119,6 +123,7 @@ Write commands need an official OAuth token:
 
 ```bash
 linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json
+linkedin-cli post text --text "hello from linkedin-cli" --visibility public --dry-run --json --output tmp/linkedin-post-text-dry-run.json
 linkedin-cli post text --text "hello from linkedin-cli" --visibility public --json
 linkedin-cli post media --text "hello with image" --media image.png --visibility public --json
 linkedin-cli post multi-image --text "hello album" --media one.png --media two.jpg --dry-run --json
@@ -127,19 +132,30 @@ linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck
 linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --dry-run --json
 linkedin-cli post article --text "read this" --url https://example.com/post --dry-run --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --dry-run --json
+linkedin-cli post quote urn:li:share:1234567890 --text "worth reading" --dry-run --json
+linkedin-cli post reply urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli post repost urn:li:share:1234567890 --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --dry-run --json
 linkedin-cli post get urn:li:share:1234567890 --json
-linkedin-cli post list --count 10 --json
+linkedin-cli post list --limit 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
-linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
-linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
-linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
-linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
-linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json --output tmp/linkedin-comment-create-dry-run.json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --dry-run --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --dry-run --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json --output tmp/linkedin-reaction-create-dry-run.json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --dry-run --json
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
-linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json --output tmp/linkedin-social-metadata.json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --dry-run --json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state closed --dry-run --json --output tmp/linkedin-comments-state-dry-run.json
+linkedin-cli insights media urn:li:ugcPost:1234567890 --json
+linkedin-cli insights organization urn:li:organization:123456 --json
+linkedin-cli insights user --json
+linkedin-cli insights user --json --output tmp/linkedin-insights-user.json
 ```
 
 For longer generated posts, prefer files:
@@ -222,7 +238,7 @@ linkedin-cli auth oauth-login
 Useful options:
 
 ```bash
-linkedin-cli auth oauth-login --json
+linkedin-cli auth oauth-login --json --output tmp/linkedin-auth-oauth-login.json
 linkedin-cli auth oauth-login --timeout 300
 linkedin-cli auth oauth-login --no-open
 linkedin-cli auth oauth-login --redirect-uri http://localhost:8787/callback
@@ -309,16 +325,24 @@ Resolution order:
 
 1. `LINKEDIN_COOKIE_HEADER`
 2. `LINKEDIN_LI_AT` + `LINKEDIN_JSESSIONID`
-3. Browser cookie extraction from Chrome, Chromium, Brave, Edge, or Firefox
+3. `LINKEDIN_COOKIE_FILE` or the default `~/.config/linkedin/cookies.env`
+4. Browser cookie extraction from Chrome, Chromium, Brave, Edge, or Firefox
 
-Full cookie header:
+Recommended: save the full Cookie header to a private file. The command does not print cookie values and sets the file mode to `600`.
+
+```bash
+linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth-status
+```
+
+One-shot env option:
 
 ```bash
 export LINKEDIN_COOKIE_HEADER='li_at=...; JSESSIONID="ajax:..."; ...'
 linkedin-cli auth-status
 ```
 
-Minimal cookie variables:
+Minimal cookie variables. If authwall/checkpoint or redirects appear, use the full Cookie header instead.
 
 ```bash
 export LINKEDIN_LI_AT='AQ...'
@@ -332,6 +356,7 @@ export LINKEDIN_BROWSER='chrome'
 export LINKEDIN_HEADLESS='1'
 export LINKEDIN_PROXY='http://127.0.0.1:7890'
 export LINKEDIN_CONFIG="$PWD/config.yaml"
+export LINKEDIN_COOKIE_FILE="$HOME/.config/linkedin/cookies.env"
 export LINKEDIN_BROWSER_STATE="$HOME/.config/linkedin-cli/browser-state.json"
 ```
 
@@ -353,7 +378,7 @@ linkedin-cli read reactions urn:li:activity:1234567890 --limit 20 --json
 linkedin-cli read search "product manager" --limit 10 --json
 
 linkedin-cli saved list --limit 20 --json
-linkedin-cli saved unsave urn:li:activity:123 --json
+linkedin-cli saved unsave urn:li:activity:123 --dry-run --json
 
 linkedin-cli post text --text "hello" --visibility public --dry-run --json
 linkedin-cli post text --text-file draft.md --visibility public --json
@@ -364,25 +389,33 @@ linkedin-cli post document --text "hello deck" --document deck.pdf --title "Deck
 linkedin-cli post poll --text "vote" --question "Pick one" --option Red --option Blue --duration three-days --json
 linkedin-cli post article --text "read this" --url https://example.com/post --json
 linkedin-cli post reshare urn:li:share:1234567890 --text "worth reading" --json
+linkedin-cli post quote urn:li:share:1234567890 --text "worth reading" --json
+linkedin-cli post repost urn:li:share:1234567890 --dry-run --json
 linkedin-cli post update urn:li:share:1234567890 --text "updated text" --json
 linkedin-cli post get urn:li:share:1234567890 --json
-linkedin-cli post list --count 10 --json
+linkedin-cli post list --limit 10 --json
 linkedin-cli post delete urn:li:share:1234567890 --dry-run --json
 linkedin-cli post delete urn:li:share:1234567890 --json
 
 linkedin-cli comment list urn:li:ugcPost:1234567890 --json
+linkedin-cli post reply urn:li:ugcPost:1234567890 --text "great post" --json
 linkedin-cli comment get urn:li:ugcPost:1234567890 987654321 --json
-linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --json
-linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --json
-linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --json
+linkedin-cli comment create urn:li:ugcPost:1234567890 --text "great post" --dry-run --json
+linkedin-cli comment update urn:li:ugcPost:1234567890 987654321 --text "updated comment" --dry-run --json
+linkedin-cli comment delete urn:li:ugcPost:1234567890 987654321 --dry-run --json
 
 linkedin-cli reaction list urn:li:ugcPost:1234567890 --json
 linkedin-cli reaction get urn:li:ugcPost:1234567890 --json
-linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --json
-linkedin-cli reaction delete urn:li:ugcPost:1234567890 --json
+linkedin-cli reaction create urn:li:ugcPost:1234567890 --type like --dry-run --json
+linkedin-cli reaction delete urn:li:ugcPost:1234567890 --dry-run --json
 
 linkedin-cli social metadata urn:li:ugcPost:1234567890 --json
-linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --json
+linkedin-cli social metadata urn:li:ugcPost:1234567890 --json --output tmp/linkedin-social-metadata.json
+linkedin-cli social comments-state urn:li:ugcPost:1234567890 --state open --dry-run --json
+linkedin-cli insights media urn:li:ugcPost:1234567890 --json
+linkedin-cli insights organization urn:li:organization:123456 --json
+linkedin-cli insights user --json
+linkedin-cli insights user --json --output tmp/linkedin-insights-user.json
 ```
 
 Legacy compatibility commands:
@@ -390,9 +423,9 @@ Legacy compatibility commands:
 ```bash
 linkedin-cli feed --max 10
 linkedin-cli search "product manager" --max 10
-linkedin-cli profile seungwon-aiden --json
+linkedin-cli profile seungwon-aiden --json --output tmp/linkedin-profile.json
 linkedin-cli profile-posts seungwon-aiden --max 20
-linkedin-cli activity urn:li:activity:123
+linkedin-cli activity urn:li:activity:123 --json --output tmp/linkedin-activity.json
 linkedin-cli post "hello from browser fallback"
 linkedin-cli react urn:li:activity:123 --type like
 linkedin-cli unreact urn:li:activity:123
@@ -446,17 +479,16 @@ delete_result = api.delete_post(post_id=result.post_id)
 print(delete_result.deleted_at)
 ```
 
-## Skills and Plugin
+## Skills
 
 This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/` and `.claude/skills/` are symlinks that point at it.
+Plugin installs use [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json) metadata and the same skill. After install, run `$linkedin-cli`; read auth should go through `auth cookie-file --from-stdin` → `auth-status`.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — first-time setup and OAuth/cookie auth
 - [command-cookbook.md](./.agents/skills/linkedin-cli/references/command-cookbook.md) — exact command patterns and JSON usage
 - [auth-troubleshooting.md](./.agents/skills/linkedin-cli/references/auth-troubleshooting.md) — session recovery and diagnostics
 - [write-workflows.md](./.agents/skills/linkedin-cli/references/write-workflows.md) — official publishing and safe mutations
-
-Claude plugin metadata lives in [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json).
 
 ## Development
 
@@ -477,7 +509,7 @@ Testing rules:
 ## Security
 
 - Never commit cookies, OAuth tokens, HAR files, or browser storage state.
-- Never paste `LINKEDIN_COOKIE_HEADER`, `li_at`, `JSESSIONID`, access tokens, client secrets, or token files into issues or pull requests.
+- Never paste `LINKEDIN_COOKIE_HEADER`, `li_at`, `JSESSIONID`, `~/.config/linkedin/cookies.env`, access tokens, client secrets, or token files into issues or pull requests.
 - Sanitize screenshots, logs, and terminal transcripts before sharing.
 
 See [SECURITY.md](.github/SECURITY.md).
