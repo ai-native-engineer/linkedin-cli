@@ -138,8 +138,16 @@ def write_cookie_header_file(path: Path, raw_header: str) -> dict[str, Any]:
         raise AuthenticationError(f"Cookie header is missing required cookies: {missing}.")
 
     resolved = path.expanduser()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.parent.chmod(0o700)
+    parent = resolved.parent
+    parent_existed = parent.exists()
+    parent.mkdir(parents=True, exist_ok=True)
+    if not parent_existed:
+        # Tighten only a directory we just created; never re-permission a pre-existing
+        # (possibly system-owned) directory such as /tmp, which would raise PermissionError.
+        try:
+            parent.chmod(0o700)
+        except OSError:
+            pass
     rendered = (
         "# linkedin-cli read-session cookies. Keep this file private.\n"
         f"{ENV_COOKIE_HEADER}={shlex.quote(normalized)}\n"

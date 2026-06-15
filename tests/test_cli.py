@@ -2639,3 +2639,23 @@ def test_sanitize_error_redacts_cookie_values() -> None:
     assert "li_at=" not in out
     assert "ValueError" in out
     assert _sanitize_error(RuntimeError("network timeout")) == "network timeout"
+
+
+def test_write_cookie_file_keeps_existing_parent(tmp_path) -> None:
+    from linkedin_cli.auth import write_cookie_header_file
+
+    # tmp_path already exists (and may be system-owned like /tmp); writing into it must not
+    # fail trying to chmod a parent directory we did not create.
+    path = tmp_path / "cookies.env"
+    summary = write_cookie_header_file(path, 'li_at=AAA; JSESSIONID="ajax:1"')
+    assert (path.stat().st_mode & 0o777) == 0o600
+    assert summary["path"] == str(path)
+
+
+def test_write_cookie_file_tightens_created_parent(tmp_path) -> None:
+    from linkedin_cli.auth import write_cookie_header_file
+
+    path = tmp_path / "newdir" / "cookies.env"  # newdir is created by the writer
+    write_cookie_header_file(path, 'li_at=AAA; JSESSIONID="ajax:1"')
+    assert (path.parent.stat().st_mode & 0o777) == 0o700
+    assert (path.stat().st_mode & 0o777) == 0o600
