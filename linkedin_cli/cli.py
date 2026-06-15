@@ -19,12 +19,15 @@ from .auth import AuthenticationError
 from .auth import collect_auth_diagnostics
 from .auth import default_cookie_file_path
 from .auth import resolve_auth_session
+from .auth import try_browser_login
 from .auth import write_cookie_header_file
 from .api import LinkedInWriteAPI
 from .browser import BrowserActionError
 from .client import LinkedInClient, LinkedInClientError
 from .config import AppConfig, load_config
 from .constants import COOKIE_REQUIRED_NAMES
+from .constants import ENV_BROWSER
+from .constants import SUPPORTED_BROWSERS
 from .contract import activity_data
 from .contract import auth_status_data
 from .contract import comment_list_success_data
@@ -443,6 +446,12 @@ def auth_status(ctx: click.Context) -> None:
         payload = collect_auth_diagnostics(ctx.obj["config"])
     except Exception as exc:
         _handle_error(exc)
+    if not _render_auth_diagnostics(payload):
+        raise SystemExit(1)
+
+
+def _render_auth_diagnostics(payload: dict) -> bool:
+    """Render the auth diagnostics panel shared by `auth-status` and `auth login`."""
     success = bool(payload.get("ok"))
     detail_lines = []
     identity = payload.get("public_id") or payload.get("full_name")
@@ -489,8 +498,7 @@ def auth_status(ctx: click.Context) -> None:
 
     title = "Authentication OK" if success else "Authentication degraded"
     console.print(build_status_panel(title, success, "\n".join(detail_lines)))
-    if not success:
-        raise SystemExit(1)
+    return success
 
 
 @cli.group("auth")
@@ -593,6 +601,100 @@ def auth_cookie_file(
         ]
     )
     console.print(build_status_panel("Cookie file saved", True, detail))
+
+
+@auth_group.command("login")
+@click.option(
+    "--browser",
+    type=click.Choice(SUPPORTED_BROWSERS),
+    default=None,
+    help="Browser to read the logged-in LinkedIn session from. Defaults to trying all supported browsers.",
+)
+@click.option(
+    "--path",
+    "cookie_file",
+    type=click.Path(dir_okay=False, path_type=str),
+    default=None,
+    help="Private cookie env file path. Defaults to ~/.config/linkedin/cookies.env.",
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing cookie file.")
+@click.pass_context
+def auth_login(
+    ctx: click.Context,
+    browser: Optional[str],
+    cookie_file: Optional[str],
+    force: bool,
+) -> None:
+    """Capture your LinkedIn read session automatically from a logged-in browser.
+
+    Tries to extract li_at + JSESSIONID from a browser you are already logged into, writes
+    them to a private 0600 cookie file, and verifies the session. If extraction fails, prints
+    manual cookie-capture steps.
+    """
+    config = ctx.obj["config"]
+    path = Path(cookie_file).expanduser() if cookie_file else default_cookie_file_path()
+
+    if path.exists() and not force:
+        raise click.ClickException(
+            f"{path} already exists. Re-run with --force to overwrite, or run "
+            "`linkedin-cli auth-status` to check the existing session."
+        )
+
+    if browser:
+        os.environ[ENV_BROWSER] = browser
+
+    session, attempts = try_browser_login(config)
+    if session is None:
+        _print_manual_cookie_steps(attempts)
+        raise SystemExit(1)
+
+    try:
+        summary = write_cookie_header_file(path, session.cookie_string)
+    except AuthenticationError as exc:
+        raise click.ClickException(str(exc)) from exc
+
+    console.print(
+        build_status_panel(
+            "Browser session captured",
+            True,
+            f"path={summary['path']}\nbrowser={session.browser}\ncookies={summary['cookie_count']}",
+        )
+    )
+
+    try:
+        payload = collect_auth_diagnostics(config)
+    except Exception as exc:
+        _handle_error(exc)
+    if not _render_auth_diagnostics(payload):
+        raise SystemExit(1)
+
+
+def _print_manual_cookie_steps(attempts: list[dict[str, str]]) -> None:
+    """Print actionable manual cookie-capture steps when automatic extraction fails."""
+    lines = []
+    if attempts:
+        lines.append("Automatic browser extraction did not find a usable LinkedIn session:")
+        for attempt in attempts:
+            lines.append(f"  - {attempt['error']}")
+        lines.append("")
+    lines.extend(
+        [
+            "Capture the cookie manually instead:",
+            "  1. Open https://www.linkedin.com and confirm you are logged in.",
+            "  2. Open DevTools (Option+Command+I on macOS, or F12).",
+            "  3. Application tab -> Storage -> Cookies -> https://www.linkedin.com.",
+            '  4. Copy the values of li_at and JSESSIONID (JSESSIONID looks like "ajax:...";',
+            "     copy it including the quotes).",
+            "  5. Build one line:  li_at=<value>; JSESSIONID=<value>",
+            "  6. Run:  linkedin-cli auth cookie-file --from-stdin",
+            "     then paste the line, press Return, and press Control+D.",
+            "  7. Verify:  linkedin-cli auth-status",
+            "",
+            "Tip: Firefox is the most reliable for automatic --browser extraction on macOS.",
+            "Never paste these values into chat, commit them, or share them.",
+        ]
+    )
+    console.print(build_status_panel("Manual cookie capture needed", False, "\n".join(lines)))
 
 
 @auth_group.command("oauth-login")

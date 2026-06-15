@@ -2523,3 +2523,90 @@ def test_search_json_output(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert '"title": "Jane Doe"' in result.output
+
+
+def _make_browser_session():
+    from linkedin_cli.auth import AuthSession
+    from requests.cookies import RequestsCookieJar
+
+    jar = RequestsCookieJar()
+    jar.set("li_at", "AAA", domain=".linkedin.com", path="/")
+    jar.set("JSESSIONID", '"ajax:123"', domain=".linkedin.com", path="/")
+    return AuthSession(cookie_jar=jar, source="browser", browser="firefox")
+
+
+def test_auth_login_writes_private_cookie_file(monkeypatch, tmp_path) -> None:
+    runner = CliRunner()
+    session = _make_browser_session()
+    monkeypatch.setattr("linkedin_cli.cli.try_browser_login", lambda config: (session, []))
+    monkeypatch.setattr(
+        "linkedin_cli.cli.collect_auth_diagnostics",
+        lambda config: {
+            "ok": True,
+            "source": "cookie-file",
+            "browser": None,
+            "cookie_count": 2,
+            "validation": {"ok": True},
+            "probes": {},
+            "hint": "",
+        },
+    )
+    target = tmp_path / "cookies.env"
+
+    result = runner.invoke(cli, ["auth", "login", "--path", str(target)])
+
+    assert result.exit_code == 0, result.output
+    assert target.exists()
+    assert (target.stat().st_mode & 0o777) == 0o600
+    # cookie values must never leak into output
+    assert "AAA" not in result.output
+    assert "ajax:123" not in result.output
+
+
+def test_auth_login_manual_fallback_on_failure(monkeypatch, tmp_path) -> None:
+    runner = CliRunner()
+    attempts = [{"browser": "chrome", "error": "chrome: macOS Keychain access was denied."}]
+    monkeypatch.setattr("linkedin_cli.cli.try_browser_login", lambda config: (None, attempts))
+    target = tmp_path / "cookies.env"
+
+    result = runner.invoke(cli, ["auth", "login", "--path", str(target)])
+
+    assert result.exit_code == 1
+    assert "DevTools" in result.output
+    assert not target.exists()
+
+
+def test_auth_login_refuses_overwrite_without_force(monkeypatch, tmp_path) -> None:
+    runner = CliRunner()
+    target = tmp_path / "cookies.env"
+    target.write_text("existing", encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(
+        "linkedin_cli.cli.try_browser_login",
+        lambda config: (calls.append(1), (None, []))[1],
+    )
+
+    result = runner.invoke(cli, ["auth", "login", "--path", str(target)])
+
+    assert result.exit_code != 0
+    assert not calls  # overwrite guard fires before any extraction
+    assert target.read_text(encoding="utf-8") == "existing"
+
+
+def test_describe_browser_error_maps_keychain_and_hides_values() -> None:
+    from linkedin_cli.auth import _describe_browser_error
+
+    keychain = _describe_browser_error("chrome", RuntimeError("Could not access Keychain"))
+    assert "chrome" in keychain
+    assert "firefox" in keychain  # points to the reliable fallback
+    # generic fallback uses the class name only, never the raw message body
+    generic = _describe_browser_error("edge", ValueError("secret-cookie-AAA"))
+    assert "secret-cookie-AAA" not in generic
+    assert "ValueError" in generic
+
+
+def test_normalize_jsessionid_quotes_unquoted_value() -> None:
+    from linkedin_cli.auth import _normalize_jsessionid
+
+    assert _normalize_jsessionid("ajax:123") == '"ajax:123"'
+    assert _normalize_jsessionid('"ajax:123"') == '"ajax:123"'  # idempotent

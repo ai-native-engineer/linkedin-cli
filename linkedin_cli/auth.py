@@ -439,20 +439,27 @@ def _load_from_env(config: AppConfig) -> AuthSession | None:
 
     jar = RequestsCookieJar()
     jar.set("li_at", li_at, domain=".linkedin.com", path="/")
-    jar.set("JSESSIONID", jsessionid, domain=".linkedin.com", path="/")
+    jar.set("JSESSIONID", _normalize_jsessionid(jsessionid), domain=".linkedin.com", path="/")
     return AuthSession(cookie_jar=jar, source="env", proxy=config.runtime.proxy)
 
 
-def _load_from_browser(config: AppConfig) -> AuthSession | None:
-    try:
-        import browser_cookie3
-    except ImportError as exc:  # pragma: no cover - dependency guarded by packaging
-        raise AuthenticationError(
-            "browser-cookie3 is required for browser cookie extraction."
-        ) from exc
+def _normalize_jsessionid(value: str) -> str:
+    """Keep the quotes LinkedIn issues around JSESSIONID, whether or not the user typed them.
 
-    browser_preference = os.getenv(ENV_BROWSER, "").strip().lower() or config.browser.preferred
-    loaders = {
+    LinkedIn serves JSESSIONID as `"ajax:..."` (quoted) and the cookie value must match, while
+    the csrf-token header uses the unquoted form (see AuthSession.jsessionid). Accepting an
+    unquoted env value and re-adding the quotes prevents a silent redirect-reject.
+    """
+    value = value.strip()
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        return value
+    return f'"{value}"'
+
+
+def _browser_cookie_loaders() -> dict[str, Any]:
+    import browser_cookie3
+
+    return {
         "chrome": browser_cookie3.chrome,
         "chromium": browser_cookie3.chromium,
         "brave": browser_cookie3.brave,
@@ -460,13 +467,21 @@ def _load_from_browser(config: AppConfig) -> AuthSession | None:
         "firefox": browser_cookie3.firefox,
     }
 
+
+def _run_browser_logins(
+    loaders: dict[str, Any], config: AppConfig
+) -> tuple[AuthSession | None, list[dict[str, str]]]:
+    """Try each browser in preference order; return the first session and any attempt errors."""
+    browser_preference = os.getenv(ENV_BROWSER, "").strip().lower() or config.browser.preferred
+    attempts: list[dict[str, str]] = []
     for browser in _ordered_browser_names(browser_preference):
         loader = loaders.get(browser)
         if loader is None:
             continue
         try:
             jar = loader()
-        except Exception:
+        except Exception as exc:  # pragma: no cover - depends on local browser state
+            attempts.append({"browser": browser, "error": _describe_browser_error(browser, exc)})
             continue
         session = _session_from_cookie_jar(
             jar,
@@ -475,8 +490,62 @@ def _load_from_browser(config: AppConfig) -> AuthSession | None:
             proxy=config.runtime.proxy,
         )
         if session is not None:
-            return session
-    return None
+            return session, attempts
+        attempts.append(
+            {
+                "browser": browser,
+                "error": "logged into this browser, but no linkedin.com session (li_at + JSESSIONID) found",
+            }
+        )
+    return None, attempts
+
+
+def _load_from_browser(config: AppConfig) -> AuthSession | None:
+    try:
+        loaders = _browser_cookie_loaders()
+    except ImportError as exc:  # pragma: no cover - dependency guarded by packaging
+        raise AuthenticationError(
+            "browser-cookie3 is required for browser cookie extraction."
+        ) from exc
+    session, _ = _run_browser_logins(loaders, config)
+    return session
+
+
+def try_browser_login(config: AppConfig) -> tuple[AuthSession | None, list[dict[str, str]]]:
+    """Extract a LinkedIn session from a logged-in browser, surfacing per-browser failures.
+
+    Unlike _load_from_browser (which swallows errors for the resolve chain), this reports
+    why each browser failed so `auth login` can give actionable guidance. Never returns or
+    logs cookie values.
+    """
+    try:
+        loaders = _browser_cookie_loaders()
+    except ImportError:
+        return None, [
+            {
+                "browser": "-",
+                "error": "browser-cookie3 is not installed; reinstall agent-linkedin or use manual cookie capture",
+            }
+        ]
+    return _run_browser_logins(loaders, config)
+
+
+def _describe_browser_error(browser: str, exc: Exception) -> str:
+    """Map a browser_cookie3 failure to an actionable hint. Never includes cookie values."""
+    text = str(exc).lower()
+    if "keychain" in text or "safe storage" in text or "securityerror" in text:
+        return (
+            f"{browser}: macOS Keychain access was denied or unavailable. "
+            "Re-run and click Allow on the Keychain prompt, or try --browser firefox."
+        )
+    if "lock" in text or "operationalerror" in text:
+        return f"{browser}: cookie database is locked. Quit {browser} and retry."
+    if "decrypt" in text or "encrypt" in text:
+        return (
+            f"{browser}: cookie decryption failed (newer browser encryption). "
+            "Try --browser firefox or capture cookies manually."
+        )
+    return f"{browser}: extraction failed ({exc.__class__.__name__})."
 
 
 def _ordered_browser_names(preferred: str) -> Iterable[str]:
