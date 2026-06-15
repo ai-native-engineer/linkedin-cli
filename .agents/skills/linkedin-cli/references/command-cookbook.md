@@ -66,6 +66,16 @@ uv run linkedin-cli auth login
 uv run linkedin-cli auth-status
 ```
 
+If automatic capture finds cookies but LinkedIn rejects the session, capture a fresh browser session:
+
+```bash
+uv run linkedin-cli auth login --via-browser --browser chrome
+uv run linkedin-cli auth login --via-browser --browser firefox
+uv run linkedin-cli auth-status
+```
+
+Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
+
 If automatic capture fails, save a full Cookie header manually without printing it:
 
 ```bash

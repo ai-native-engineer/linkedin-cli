@@ -5,6 +5,7 @@ from pathlib import Path
 from requests.cookies import RequestsCookieJar
 
 from linkedin_cli.auth import AuthSession
+from linkedin_cli.auth import _auth_session_from_playwright_cookies
 from linkedin_cli.auth import _session_from_cookie_jar
 from linkedin_cli.auth import collect_auth_diagnostics
 from linkedin_cli.auth import probe_read_access
@@ -116,7 +117,7 @@ def test_write_cookie_header_file_uses_private_permissions(tmp_path: Path) -> No
 def test_session_from_cookie_jar_keeps_full_linkedin_cookie_set() -> None:
     source_jar = RequestsCookieJar()
     source_jar.set("li_at", "abc123", domain=".linkedin.com", path="/")
-    source_jar.set("JSESSIONID", '"ajax:123"', domain=".linkedin.com", path="/")
+    source_jar.set("JSESSIONID", "ajax:123", domain=".linkedin.com", path="/")
     source_jar.set("li_theme", "light", domain=".www.linkedin.com", path="/")
     source_jar.set("sessionid", "ignore-me", domain=".example.com", path="/")
 
@@ -129,7 +130,50 @@ def test_session_from_cookie_jar_keeps_full_linkedin_cookie_set() -> None:
 
     assert session is not None
     assert session.cookie_count == 3
+    assert session.cookie_jar.get("JSESSIONID") == '"ajax:123"'
+    assert session.jsessionid == "ajax:123"
     assert session.cookie_jar.get("li_theme") == "light"
+    assert session.cookie_jar.get("sessionid") is None
+
+
+def test_playwright_cookie_capture_keeps_full_linkedin_cookie_set() -> None:
+    config = load_config()
+    session = _auth_session_from_playwright_cookies(
+        [
+            {
+                "name": "li_at",
+                "value": "abc123",
+                "domain": ".linkedin.com",
+                "path": "/",
+            },
+            {
+                "name": "JSESSIONID",
+                "value": "ajax:123",
+                "domain": ".linkedin.com",
+                "path": "/",
+            },
+            {
+                "name": "bcookie",
+                "value": "browser-id",
+                "domain": ".linkedin.com",
+                "path": "/",
+            },
+            {
+                "name": "sessionid",
+                "value": "ignore-me",
+                "domain": ".example.com",
+                "path": "/",
+            },
+        ],
+        config=config,
+    )
+
+    assert session is not None
+    assert session.source == "browser-login"
+    assert session.cookie_count == 3
+    assert session.cookie_jar.get("JSESSIONID") == '"ajax:123"'
+    assert session.jsessionid == "ajax:123"
+    assert session.cookie_jar.get("bcookie") == "browser-id"
     assert session.cookie_jar.get("sessionid") is None
 
 

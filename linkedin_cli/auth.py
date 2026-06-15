@@ -411,6 +411,41 @@ def _auth_session_from_cookie_header(
     return AuthSession(cookie_jar=jar, source=source, proxy=config.runtime.proxy)
 
 
+def _auth_session_from_playwright_cookies(
+    cookies: Iterable[dict[str, Any]],
+    *,
+    config: AppConfig,
+    source: str = "browser-login",
+) -> AuthSession | None:
+    """Build a read session from Playwright ``context.cookies()`` output.
+
+    Inverse of :meth:`AuthSession.as_playwright_cookies`. Keeps the full linkedin.com cookie
+    jar (li_at, JSESSIONID, bcookie, lidc, ...), which Voyager accepts, and re-quotes
+    JSESSIONID if Playwright returned it without the quotes LinkedIn issues. Returns ``None``
+    when the required cookies (li_at + JSESSIONID) are absent.
+    """
+    jar = RequestsCookieJar()
+    for cookie in cookies:
+        name = cookie.get("name")
+        value = cookie.get("value")
+        if not name or value is None:
+            continue
+        domain = cookie.get("domain") or ".linkedin.com"
+        if not _is_linkedin_domain(domain):
+            continue
+        if name == "JSESSIONID":
+            value = _normalize_jsessionid(value)
+        jar.set(name, value, domain=domain, path=cookie.get("path") or "/")
+    if not _has_required_cookies(jar):
+        return None
+    return AuthSession(
+        cookie_jar=jar,
+        source=source,
+        browser=config.browser.preferred,
+        proxy=config.runtime.proxy,
+    )
+
+
 def _resolve_cookie_file_path() -> tuple[Path, bool]:
     raw_path = os.getenv(ENV_COOKIE_FILE, "").strip()
     if raw_path:
@@ -600,10 +635,15 @@ def _session_from_cookie_jar(
 
 
 def _copy_cookie(target: RequestsCookieJar, cookie) -> None:
+    value = cookie.value
+    if cookie.name == "JSESSIONID":
+        # browser_cookie3 can return JSESSIONID without the surrounding quotes LinkedIn issues.
+        # Voyager rejects the session unless the Cookie header keeps that quoted ajax token.
+        value = _normalize_jsessionid(value or "")
     target.set_cookie(
         create_cookie(
             name=cookie.name,
-            value=cookie.value,
+            value=value,
             domain=cookie.domain or ".linkedin.com",
             path=cookie.path or "/",
             secure=bool(cookie.secure),

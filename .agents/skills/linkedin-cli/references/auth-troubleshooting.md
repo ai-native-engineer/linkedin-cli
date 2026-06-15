@@ -29,6 +29,17 @@ uv run linkedin-cli auth-status
 
 `auth login` extracts cookies from a logged-in browser and writes a private `600` file. If automatic extraction fails it prints manual DevTools steps; you can also save a pasted full `Cookie` request header with `uv run linkedin-cli auth cookie-file --from-stdin` (then `Ctrl-D`), which keeps the secret out of shell history.
 
+If automatic extraction finds cookies but `auth-status` or `read feed` still reports self-redirect/authwall behavior, capture a fresh session through Playwright:
+
+```bash
+uv run linkedin-cli auth login --via-browser --browser chrome
+uv run linkedin-cli auth login --via-browser --browser firefox
+```
+
+Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
+
+The user completes login/2FA/checkpoints in the browser window; the CLI stores the full LinkedIn cookie jar privately and never prints cookie values.
+
 Minimal environment fallback:
 
 ```bash

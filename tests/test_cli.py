@@ -2563,6 +2563,52 @@ def test_auth_login_writes_private_cookie_file(monkeypatch, tmp_path) -> None:
     assert "ajax:123" not in result.output
 
 
+def test_auth_login_via_browser_honors_browser_option(monkeypatch, tmp_path) -> None:
+    runner = CliRunner()
+    session = _make_browser_session()
+    seen = []
+
+    def fake_capture_read_session(config, *, headless):
+        seen.append((config.browser.preferred, headless))
+        return session, ""
+
+    monkeypatch.setattr("linkedin_cli.cli.capture_read_session", fake_capture_read_session)
+    monkeypatch.setattr(
+        "linkedin_cli.cli.collect_auth_diagnostics",
+        lambda config: {
+            "ok": True,
+            "source": "cookie-file",
+            "browser": None,
+            "cookie_count": 2,
+            "validation": {"ok": True},
+            "probes": {},
+            "hint": "",
+        },
+    )
+    target = tmp_path / "cookies.env"
+
+    result = runner.invoke(
+        cli,
+        [
+            "auth",
+            "login",
+            "--via-browser",
+            "--browser",
+            "firefox",
+            "--headless",
+            "--path",
+            str(target),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert seen == [("firefox", True)]
+    assert target.exists()
+    assert (target.stat().st_mode & 0o777) == 0o600
+    assert "AAA" not in result.output
+    assert "ajax:123" not in result.output
+
+
 def test_auth_login_manual_fallback_on_failure(monkeypatch, tmp_path) -> None:
     runner = CliRunner()
     attempts = [{"browser": "chrome", "error": "chrome: macOS Keychain access was denied."}]

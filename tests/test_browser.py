@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from linkedin_cli.browser import _SAVED_POSTS_SCRIPT
 from linkedin_cli.browser import _activity_url
 from linkedin_cli.browser import _browser_state_path
@@ -10,9 +12,12 @@ from linkedin_cli.browser import _chrome_launch_candidates
 from linkedin_cli.browser import _load_login_credentials
 from linkedin_cli.browser import _looks_auto_login_page
 from linkedin_cli.browser import _looks_logged_out
+from linkedin_cli.browser import _launch_browser_for
 from linkedin_cli.browser import _menu_contains_any
+from linkedin_cli.browser import _poll_until_logged_in
 from linkedin_cli.browser import _save_action_labels
 from linkedin_cli.browser import _save_action_selectors
+from linkedin_cli.browser import BrowserActionError
 from linkedin_cli.browser import LinkedInBrowserFallback
 
 
@@ -21,6 +26,23 @@ def test_chrome_launch_candidates_prefer_installed_chrome_channel() -> None:
 
     assert candidates[0] == {"channel": "chrome", "headless": True}
     assert candidates[-1] == {"headless": True}
+
+
+def test_launch_browser_for_wraps_missing_firefox_with_install_hint() -> None:
+    class FakeFirefox:
+        def launch(self, **_kwargs):
+            raise RuntimeError("Executable doesn't exist at /tmp/firefox\nmore detail")
+
+    playwright = SimpleNamespace(firefox=FakeFirefox())
+    config = SimpleNamespace(browser=SimpleNamespace(preferred="firefox"))
+
+    with pytest.raises(BrowserActionError) as exc_info:
+        _launch_browser_for(playwright, config, headless=True)
+
+    message = str(exc_info.value)
+    assert "Unable to launch Firefox" in message
+    assert "playwright install firefox" in message
+    assert "Executable doesn't exist" in message
 
 
 def test_unsave_selectors_include_english_and_korean_labels() -> None:
@@ -147,6 +169,36 @@ def test_saved_posts_script_anchors_on_activity_href_not_main_li() -> None:
     assert 'a[href*="/feed/update/urn:li:activity:"]' in _SAVED_POSTS_SCRIPT
     assert ".closest(" in _SAVED_POSTS_SCRIPT
     assert "main li" not in _SAVED_POSTS_SCRIPT
+
+
+class _FakePollPage:
+    def __init__(self, url: str, body: str) -> None:
+        self.url = url
+        self._body = body
+        self.waits: list[int] = []
+
+    def locator(self, selector: str):
+        assert selector == "body"
+        return SimpleNamespace(inner_text=lambda timeout=3000: self._body)
+
+    def wait_for_timeout(self, ms: int) -> None:
+        self.waits.append(ms)
+
+
+def test_poll_until_logged_in_returns_immediately_when_authed() -> None:
+    page = _FakePollPage("https://www.linkedin.com/feed/", "내 네트워크 피드")
+
+    assert _poll_until_logged_in(page, timeout=5.0) is True
+    assert page.waits == []  # no polling delay once the session is recognized
+
+
+def test_poll_until_logged_in_times_out_while_logged_out(monkeypatch) -> None:
+    ticks = iter([0.0, 0.0, 100.0, 100.0])
+    monkeypatch.setattr("linkedin_cli.browser.time.monotonic", lambda: next(ticks))
+    page = _FakePollPage("https://www.linkedin.com/login/", "")
+
+    assert _poll_until_logged_in(page, timeout=5.0) is False
+    assert page.waits == [2000]  # polled once before the deadline elapsed
 
 
 def test_menu_contains_any_uses_exact_visible_menu_labels() -> None:

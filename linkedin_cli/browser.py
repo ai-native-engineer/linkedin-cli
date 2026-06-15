@@ -17,6 +17,7 @@ import time
 from typing import Iterable
 
 from .auth import AuthSession
+from .auth import _auth_session_from_playwright_cookies
 from .config import AppConfig
 from .constants import ENV_BROWSER_STATE
 from .constants import ENV_PASSWORD
@@ -237,35 +238,8 @@ class LinkedInBrowserFallback:
         return context
 
     def _launch_browser(self, playwright):
-        headless = self.config.browser.headless
-        preferred = self.config.browser.preferred
-
-        if preferred == "firefox":
-            return playwright.firefox.launch(headless=headless)
-        if preferred == "edge":
-            return playwright.chromium.launch(channel="msedge", headless=headless)
-        if preferred == "brave":
-            brave_path = _first_existing_path(_BRAVE_EXECUTABLES)
-            if brave_path is not None:
-                return playwright.chromium.launch(executable_path=str(brave_path), headless=headless)
-
-        if preferred == "chrome":
-            return self._launch_chrome(playwright, headless=headless)
-
-        return playwright.chromium.launch(headless=headless)
-
-    def _launch_chrome(self, playwright, *, headless: bool):
-        errors: list[str] = []
-        for kwargs in _chrome_launch_candidates(headless=headless):
-            try:
-                return playwright.chromium.launch(**kwargs)
-            except Exception as exc:  # Playwright raises implementation-specific errors.
-                errors.append(str(exc).splitlines()[0])
-        details = "; ".join(error for error in errors if error)
-        raise BrowserActionError(
-            "Unable to launch Chrome for browser fallback. "
-            "Install Google Chrome or run `playwright install chromium`."
-            + (f" Details: {details}" if details else "")
+        return _launch_browser_for(
+            playwright, self.config, headless=self.config.browser.headless
         )
 
     def _set_visibility(self, page, visibility: str) -> None:
@@ -513,6 +487,132 @@ def _chrome_launch_candidates(*, headless: bool) -> list[dict[str, object]]:
         candidates.append({"executable_path": str(chrome_path), "headless": headless})
     candidates.append({"headless": headless})
     return candidates
+
+
+def _launch_chrome_browser(playwright, *, headless: bool):
+    errors: list[str] = []
+    for kwargs in _chrome_launch_candidates(headless=headless):
+        try:
+            return playwright.chromium.launch(**kwargs)
+        except Exception as exc:  # Playwright raises implementation-specific errors.
+            errors.append(str(exc).splitlines()[0])
+    details = "; ".join(error for error in errors if error)
+    raise BrowserActionError(
+        "Unable to launch Chrome for browser fallback. "
+        "Install Google Chrome or run `playwright install chromium`."
+        + (f" Details: {details}" if details else "")
+    )
+
+
+def _launch_browser_for(playwright, config: AppConfig, *, headless: bool):
+    preferred = config.browser.preferred
+    if preferred == "firefox":
+        return _launch_with_hint(
+            lambda: playwright.firefox.launch(headless=headless),
+            browser_name="Firefox",
+            recovery="Run `playwright install firefox` or retry with `--browser chrome`.",
+        )
+    if preferred == "edge":
+        return _launch_with_hint(
+            lambda: playwright.chromium.launch(channel="msedge", headless=headless),
+            browser_name="Microsoft Edge",
+            recovery="Install Microsoft Edge or retry with `--browser chrome`.",
+        )
+    if preferred == "brave":
+        brave_path = _first_existing_path(_BRAVE_EXECUTABLES)
+        if brave_path is not None:
+            return _launch_with_hint(
+                lambda: playwright.chromium.launch(
+                    executable_path=str(brave_path), headless=headless
+                ),
+                browser_name="Brave",
+                recovery="Install Brave Browser or retry with `--browser chrome`.",
+            )
+    if preferred == "chrome":
+        return _launch_chrome_browser(playwright, headless=headless)
+    return _launch_with_hint(
+        lambda: playwright.chromium.launch(headless=headless),
+        browser_name="Chromium",
+        recovery="Run `playwright install chromium`.",
+    )
+
+
+def _launch_with_hint(launch, *, browser_name: str, recovery: str):
+    try:
+        return launch()
+    except Exception as exc:  # Playwright raises implementation-specific errors.
+        detail = str(exc).splitlines()[0]
+        raise BrowserActionError(
+            f"Unable to launch {browser_name} for browser fallback. {recovery}"
+            + (f" Details: {detail}" if detail else "")
+        ) from exc
+
+
+def capture_read_session(
+    config: AppConfig,
+    *,
+    headless: bool = False,
+    login_timeout: float = 240.0,
+) -> tuple[AuthSession | None, str]:
+    """Open a browser, let the user log into LinkedIn, and capture the read-session cookies.
+
+    The session it captures is a real, freshly issued LinkedIn web session, so Voyager accepts
+    the cookies where browser_cookie3-extracted ones are often rejected. Returns
+    ``(AuthSession, "")`` on success or ``(None, reason)`` on failure. Never logs cookie
+    values.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return None, (
+            "Playwright is not installed. Run `uv run playwright install chromium` and retry."
+        )
+
+    nav_timeout_ms = int(max(config.rate_limit.timeout, 30.0) * 1000)
+    cookies: list[dict[str, object]] = []
+    with sync_playwright() as playwright:
+        try:
+            browser = _launch_browser_for(playwright, config, headless=headless)
+        except BrowserActionError as exc:
+            return None, str(exc)
+        # Always capture a fresh context. Reusing a saved storage_state can mix a stale li_at
+        # into the jar; LinkedIn then rejects the whole session ("li_at=delete me") and reads
+        # self-redirect. The cookies.env file is the read-session store, not storage_state.
+        context = browser.new_context()
+        try:
+            page = context.new_page()
+            page.goto(
+                "https://www.linkedin.com/feed/",
+                wait_until="domcontentloaded",
+                timeout=nav_timeout_ms,
+            )
+            if not _poll_until_logged_in(page, timeout=login_timeout):
+                return None, (
+                    "No LinkedIn login was detected in the browser window. "
+                    "Log in within the window, then re-run `auth login --via-browser`."
+                )
+            cookies = context.cookies()
+        finally:
+            context.close()
+            browser.close()
+
+    session = _auth_session_from_playwright_cookies(cookies, config=config)
+    if session is None:
+        return None, "Logged in, but li_at + JSESSIONID were not captured. Try again."
+    return session, ""
+
+
+def _poll_until_logged_in(page, *, timeout: float) -> bool:
+    """Wait until the page no longer looks logged out (manual login completes in the window)."""
+    deadline = time.monotonic() + max(timeout, 5.0)
+    while time.monotonic() < deadline:
+        if not _looks_logged_out(page.url, _page_body_text(page)):
+            return True
+        try:
+            page.wait_for_timeout(2000)
+        except Exception:  # pragma: no cover - page closed mid-wait
+            break
+    return not _looks_logged_out(page.url, _page_body_text(page))
 
 
 def _locator_candidates(locator, *, limit: int = 12):

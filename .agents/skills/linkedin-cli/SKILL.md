@@ -42,6 +42,16 @@ linkedin-cli auth login      # auto-capture cookies from a logged-in browser; pr
 linkedin-cli auth-status
 ```
 
+If automatic capture finds cookies but LinkedIn rejects the session, capture a fresh browser session:
+
+```bash
+linkedin-cli auth login --via-browser --browser chrome
+linkedin-cli auth login --via-browser --browser firefox
+linkedin-cli auth-status
+```
+
+Firefox requires the Playwright Firefox build first (`playwright install firefox`).
+
 Clone path (development):
 
 ```bash
@@ -66,6 +76,7 @@ uv run linkedin-cli auth permission-check --json
 |------|---------|
 | Install dependencies | `uv sync --extra dev` |
 | Capture read cookies from a logged-in browser | `uv run linkedin-cli auth login` |
+| Capture a fresh browser session when extracted cookies are rejected | `uv run linkedin-cli auth login --via-browser --browser chrome` |
 | Save full read Cookie header privately | `uv run linkedin-cli auth cookie-file --from-stdin` |
 | Verify session and probes | `uv run linkedin-cli auth-status` |
 | Issue official OAuth token | `uv run linkedin-cli auth oauth-login --json --output tmp/linkedin-auth-oauth-login.json` (export `LINKEDIN_CLIENT_ID`/`LINKEDIN_CLIENT_SECRET` first) |

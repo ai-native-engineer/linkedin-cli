@@ -52,6 +52,17 @@ uv run linkedin-cli auth cookie-file --from-stdin
 uv run linkedin-cli auth-status
 ```
 
+If automatic extraction succeeds but LinkedIn Voyager still rejects the session with self-redirect/authwall behavior, capture a fresh session through a Playwright browser window:
+
+```bash
+uv run linkedin-cli auth login --via-browser --browser chrome
+uv run linkedin-cli auth login --via-browser --browser firefox
+```
+
+Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
+
+This lets the user complete login/2FA/checkpoints in the window, then stores the full LinkedIn cookie jar privately without printing values.
+
 The command writes `~/.config/linkedin/cookies.env` with `600` permissions and never prints cookie values. Override the path only when needed:
 
 ```bash

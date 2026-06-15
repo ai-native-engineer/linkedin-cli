@@ -105,6 +105,17 @@ linkedin-cli auth-status
 
 `auth login` extracts cookies from a logged-in browser (Chrome, Chromium, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication).
 
+If automatic extraction succeeds but LinkedIn Voyager rejects the session with self-redirect/authwall behavior, capture a fresh web session directly:
+
+```bash
+linkedin-cli auth login --via-browser --browser chrome
+linkedin-cli auth login --via-browser --browser firefox
+```
+
+Firefox requires the Playwright Firefox build first: `uv run playwright install firefox`.
+
+This opens a Playwright browser window, lets you complete login/2FA/checkpoints yourself, and saves the full LinkedIn cookie jar to the private file. Cookie values are never printed.
+
 Check official OAuth permissions without mutating LinkedIn:
 
 ```bash
@@ -340,6 +351,15 @@ Resolution order:
 linkedin-cli auth login
 linkedin-cli auth-status
 ```
+
+If the extracted cookies are rejected by LinkedIn Voyager, capture a fresh web session in a Playwright browser window:
+
+```bash
+linkedin-cli auth login --via-browser --browser chrome
+linkedin-cli auth login --via-browser --browser firefox
+```
+
+Firefox requires the Playwright Firefox build first: `uv run playwright install firefox`.
 
 If automatic extraction fails (on macOS, Chrome/Brave/Edge prompt for Keychain access — `--browser firefox` is the most reliable), capture the cookie manually:
 

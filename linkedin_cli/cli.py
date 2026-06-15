@@ -23,6 +23,7 @@ from .auth import try_browser_login
 from .auth import write_cookie_header_file
 from .api import LinkedInWriteAPI
 from .browser import BrowserActionError
+from .browser import capture_read_session
 from .client import LinkedInClient, LinkedInClientError
 from .config import AppConfig, load_config
 from .constants import COOKIE_REQUIRED_NAMES
@@ -618,18 +619,35 @@ def auth_cookie_file(
     help="Private cookie env file path. Defaults to ~/.config/linkedin/cookies.env.",
 )
 @click.option("--force", is_flag=True, help="Overwrite an existing cookie file.")
+@click.option(
+    "--via-browser",
+    is_flag=True,
+    help="Log into LinkedIn in a Playwright-driven browser window and capture that fresh "
+    "session. Most reliable when automatic extraction is rejected (self-redirect/auth_expired).",
+)
+@click.option(
+    "--headless/--no-headless",
+    "headless",
+    default=False,
+    help="With --via-browser: run the login browser headless. Default shows the window so you "
+    "can log in (and clear any 2FA/checkpoint).",
+)
 @click.pass_context
 def auth_login(
     ctx: click.Context,
     browser: Optional[str],
     cookie_file: Optional[str],
     force: bool,
+    via_browser: bool,
+    headless: bool,
 ) -> None:
-    """Capture your LinkedIn read session automatically from a logged-in browser.
+    """Capture your LinkedIn read session from a logged-in browser.
 
-    Tries to extract li_at + JSESSIONID from a browser you are already logged into, writes
-    them to a private 0600 cookie file, and verifies the session. If extraction fails, prints
-    manual cookie-capture steps.
+    Default: extract li_at + JSESSIONID from a browser you are already logged into. With
+    --via-browser: open a Playwright browser, let you log in, and capture that fresh session
+    (this is the reliable path when automatic extraction is rejected). Either way the cookies
+    are written to a private 0600 file and the session is verified. On failure, prints manual
+    cookie-capture steps.
     """
     config = ctx.obj["config"]
     path = Path(cookie_file).expanduser() if cookie_file else default_cookie_file_path()
@@ -642,11 +660,22 @@ def auth_login(
 
     if browser:
         os.environ[ENV_BROWSER] = browser
+        config = load_config(config.path)
+        ctx.obj["config"] = config
 
-    session, attempts = try_browser_login(config)
-    if session is None:
-        _print_manual_cookie_steps(attempts)
-        raise SystemExit(1)
+    if via_browser:
+        session, reason = capture_read_session(config, headless=headless)
+        if session is None:
+            console.print(build_status_panel("Browser login failed", False, reason))
+            _print_manual_cookie_steps([])
+            raise SystemExit(1)
+        source_detail = f"browser-login ({session.browser})"
+    else:
+        session, attempts = try_browser_login(config)
+        if session is None:
+            _print_manual_cookie_steps(attempts)
+            raise SystemExit(1)
+        source_detail = session.browser
 
     try:
         summary = write_cookie_header_file(path, session.cookie_string)
@@ -657,7 +686,7 @@ def auth_login(
         build_status_panel(
             "Browser session captured",
             True,
-            f"path={summary['path']}\nbrowser={session.browser}\ncookies={summary['cookie_count']}",
+            f"path={summary['path']}\nsource={source_detail}\ncookies={summary['cookie_count']}",
         )
     )
 
