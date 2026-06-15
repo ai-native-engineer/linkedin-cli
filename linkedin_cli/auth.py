@@ -76,17 +76,17 @@ class AuthSession:
     def as_playwright_cookies(self) -> list[dict[str, object]]:
         cookies = []
         for cookie in self.cookie_jar:
-            cookies.append(
-                {
-                    "name": cookie.name,
-                    "value": cookie.value,
-                    "domain": cookie.domain or ".linkedin.com",
-                    "path": cookie.path or "/",
-                    "httpOnly": bool(cookie._rest.get("HttpOnly")),
-                    "secure": bool(cookie.secure),
-                    "sameSite": "Lax",
-                }
-            )
+            rendered: dict[str, object] = {
+                "name": cookie.name,
+                "value": cookie.value,
+                "domain": cookie.domain or ".linkedin.com",
+                "path": cookie.path or "/",
+                "expires": int(cookie.expires) if cookie.expires is not None else -1,
+                "httpOnly": bool(cookie._rest.get("HttpOnly")),
+                "secure": bool(cookie.secure),
+                "sameSite": _normalize_playwright_same_site(cookie._rest.get("SameSite")),
+            }
+            cookies.append(rendered)
         return cookies
 
 
@@ -122,6 +122,11 @@ def resolve_auth_session(config: AppConfig) -> AuthSession:
 def default_cookie_file_path() -> Path:
     """Return the default private cookie env-file path."""
     return Path(DEFAULT_COOKIE_FILE).expanduser()
+
+
+def default_browser_state_file_path() -> Path:
+    """Return the default private Playwright browser-state path."""
+    return _resolve_browser_state_path()
 
 
 def summarize_cookie_header(raw_header: str) -> dict[str, Any]:
@@ -164,6 +169,32 @@ def write_cookie_header_file(path: Path, raw_header: str) -> dict[str, Any]:
     return {
         **summary,
         "path": str(resolved),
+    }
+
+
+def write_browser_state_file(path: Path, session: AuthSession) -> dict[str, Any]:
+    """Write a private Playwright storage_state file from a resolved browser session."""
+    cookies = session.as_playwright_cookies()
+    if not cookies or not session.has_required_cookies():
+        raise AuthenticationError("Cannot write browser state without a valid LinkedIn session.")
+
+    resolved = path.expanduser()
+    parent = resolved.parent
+    parent_existed = parent.exists()
+    parent.mkdir(parents=True, exist_ok=True)
+    if not parent_existed:
+        try:
+            parent.chmod(0o700)
+        except OSError:
+            pass
+    resolved.write_text(
+        json.dumps({"cookies": cookies, "origins": []}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    resolved.chmod(0o600)
+    return {
+        "path": str(resolved),
+        "cookie_count": len(cookies),
     }
 
 
@@ -462,7 +493,14 @@ def _auth_session_from_playwright_cookies(
             continue
         if name == "JSESSIONID":
             value = _normalize_jsessionid(value)
-        jar.set(name, value, domain=domain, path=cookie.get("path") or "/")
+        jar.set(
+            name,
+            value,
+            domain=domain,
+            path=cookie.get("path") or "/",
+            secure=bool(cookie.get("secure")),
+            expires=_normalize_cookie_expires(cookie.get("expires")),
+        )
     if not _has_required_cookies(jar):
         return None
     return AuthSession(
@@ -544,6 +582,12 @@ def _normalize_jsessionid(value: str) -> str:
     if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
         return value
     return f'"{value}"'
+
+
+def _normalize_cookie_expires(value: object) -> int | None:
+    if not isinstance(value, (int, float)) or value < 0:
+        return None
+    return int(value)
 
 
 def _browser_cookie_loaders() -> dict[str, Any]:
@@ -685,6 +729,15 @@ def _copy_cookie(target: RequestsCookieJar, cookie) -> None:
             rest=dict(getattr(cookie, "_rest", {})),
         )
     )
+
+
+def _normalize_playwright_same_site(value: object) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized == "strict":
+        return "Strict"
+    if normalized == "none":
+        return "None"
+    return "Lax"
 
 
 def _has_required_cookies(jar: RequestsCookieJar) -> bool:

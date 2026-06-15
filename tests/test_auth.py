@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from linkedin_cli.auth import _auth_session_from_playwright_cookies
 from linkedin_cli.auth import _load_from_browser_state
+from linkedin_cli.auth import write_browser_state_file
 
 
 def _fake_config(*, preferred: str = "chrome", proxy: str | None = None) -> SimpleNamespace:
@@ -91,3 +92,30 @@ def test_browser_state_file_builds_session(monkeypatch, tmp_path) -> None:
     assert session.source == "browser-state"
     assert session.cookie_count == 3
     assert session.cookie_jar.get("JSESSIONID") == '"ajax:123"'
+
+
+def test_write_browser_state_file_preserves_cookie_metadata(tmp_path) -> None:
+    cookies = [
+        {
+            "name": "li_at",
+            "value": "AAA",
+            "domain": ".www.linkedin.com",
+            "path": "/feed",
+            "expires": 1_900_000_000,
+        },
+        {"name": "JSESSIONID", "value": "ajax:123", "domain": ".linkedin.com", "path": "/"},
+    ]
+    session = _auth_session_from_playwright_cookies(cookies, config=_fake_config())
+    assert session is not None
+
+    state_path = tmp_path / "browser-state.json"
+    summary = write_browser_state_file(state_path, session)
+
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert summary["path"] == str(state_path)
+    assert (state_path.stat().st_mode & 0o777) == 0o600
+    assert payload["origins"] == []
+    assert payload["cookies"][0]["domain"] == ".www.linkedin.com"
+    assert payload["cookies"][0]["path"] == "/feed"
+    assert payload["cookies"][0]["expires"] == 1_900_000_000
+    assert payload["cookies"][1]["value"] == '"ajax:123"'

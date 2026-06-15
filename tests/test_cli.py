@@ -2552,12 +2552,16 @@ def test_auth_login_writes_private_cookie_file(monkeypatch, tmp_path) -> None:
         },
     )
     target = tmp_path / "cookies.env"
+    state_path = tmp_path / "browser-state.json"
+    monkeypatch.setenv("LINKEDIN_BROWSER_STATE", str(state_path))
 
     result = runner.invoke(cli, ["auth", "login", "--path", str(target)])
 
     assert result.exit_code == 0, result.output
     assert target.exists()
+    assert state_path.exists()
     assert (target.stat().st_mode & 0o777) == 0o600
+    assert (state_path.stat().st_mode & 0o777) == 0o600
     # cookie values must never leak into output
     assert "AAA" not in result.output
     assert "ajax:123" not in result.output

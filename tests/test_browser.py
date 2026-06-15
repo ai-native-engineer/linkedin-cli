@@ -295,6 +295,35 @@ def test_parse_feed_graphql_payload_returns_normalizable_posts() -> None:
     ]
 
 
+def test_browser_feed_posts_uses_graphql_fetch(monkeypatch) -> None:
+    payload = {
+        "included": [
+            {
+                "entityUrn": "urn:li:activity:7441619761081294848",
+                "commentary": {"text": {"text": "LinkedIn browser-context feed post"}},
+                "actor": {"name": {"text": "Jane Doe"}},
+            }
+        ]
+    }
+    seen = []
+
+    class FakeOpenPage:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, *_args):
+            return False
+
+    subject = object.__new__(LinkedInBrowserFallback)
+    subject._open_page = lambda url: seen.append(url) or FakeOpenPage()
+    monkeypatch.setattr("linkedin_cli.browser._fetch_feed_graphql", lambda *_args, **_kwargs: payload)
+
+    posts = subject.get_feed_posts(1)
+
+    assert seen == ["https://www.linkedin.com/feed/"]
+    assert posts[0]["commentary"] == {"text": "LinkedIn browser-context feed post"}
+
+
 def test_menu_contains_any_uses_exact_visible_menu_labels() -> None:
     class FakeLocator:
         def evaluate_all(self, _script):

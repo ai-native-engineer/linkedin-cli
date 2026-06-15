@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import hashlib
 import os
 from pathlib import Path
@@ -14,11 +15,12 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Iterable
+from typing import Any, Iterable
 
 from .auth import AuthSession
 from .auth import _auth_session_from_playwright_cookies
 from .config import AppConfig
+from .constants import DEFAULT_BROWSER_STATE_FILE
 from .constants import ENV_BROWSER_STATE
 from .constants import ENV_PASSWORD
 from .constants import ENV_USERNAME
@@ -44,6 +46,9 @@ class BrowserLoginCredentials:
     username: str
     password: str
     source: str
+
+
+_LINKEDIN_FEED_GRAPHQL_QUERY_ID = "voyagerFeedDashMainFeed.923020905727c01516495a0ac90bb475"
 
 
 class LinkedInBrowserFallback:
@@ -152,7 +157,9 @@ class LinkedInBrowserFallback:
                     break
                 added = 0
                 for post in batch:
-                    key = str(post.get("entityUrn") or post.get("url") or post.get("commentary") or "")
+                    key = str(
+                        post.get("entityUrn") or post.get("url") or post.get("commentary") or ""
+                    )
                     if not key or key in seen:
                         continue
                     seen.add(key)
@@ -781,7 +788,9 @@ def _extract_graphql_text(raw: Any) -> str:
             if text:
                 return text
     if isinstance(raw, list):
-        return " ".join(part for part in (_extract_graphql_text(item) for item in raw) if part).strip()
+        return " ".join(
+            part for part in (_extract_graphql_text(item) for item in raw) if part
+        ).strip()
     return str(raw).strip()
 
 
@@ -853,9 +862,13 @@ def _parse_relative_timestamp(raw_text: str) -> str:
             delta = timedelta(**{delta_key: number})
             return (datetime.now(timezone.utc) - delta).isoformat(timespec="seconds")
     if unit in {"mo", "month", "months", "개월"}:
-        return (datetime.now(timezone.utc) - timedelta(days=number * 30)).isoformat(timespec="seconds")
+        return (datetime.now(timezone.utc) - timedelta(days=number * 30)).isoformat(
+            timespec="seconds"
+        )
     if unit in {"y", "year", "years", "년"}:
-        return (datetime.now(timezone.utc) - timedelta(days=number * 365)).isoformat(timespec="seconds")
+        return (datetime.now(timezone.utc) - timedelta(days=number * 365)).isoformat(
+            timespec="seconds"
+        )
     return ""
 
 

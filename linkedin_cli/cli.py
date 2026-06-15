@@ -17,9 +17,11 @@ from rich.console import Console
 from . import __version__
 from .auth import AuthenticationError
 from .auth import collect_auth_diagnostics
+from .auth import default_browser_state_file_path
 from .auth import default_cookie_file_path
 from .auth import resolve_auth_session
 from .auth import try_browser_login
+from .auth import write_browser_state_file
 from .auth import write_cookie_header_file
 from .api import LinkedInWriteAPI
 from .browser import BrowserActionError
@@ -682,11 +684,26 @@ def auth_login(
     except AuthenticationError as exc:
         raise click.ClickException(str(exc)) from exc
 
+    state_summary = None
+    if not via_browser:
+        try:
+            state_summary = write_browser_state_file(default_browser_state_file_path(), session)
+        except AuthenticationError as exc:
+            raise click.ClickException(str(exc)) from exc
+
+    detail_lines = [
+        f"path={summary['path']}",
+        f"source={source_detail}",
+        f"cookies={summary['cookie_count']}",
+    ]
+    if state_summary is not None:
+        detail_lines.append(f"browser_state={state_summary['path']}")
+
     console.print(
         build_status_panel(
             "Browser session captured",
             True,
-            f"path={summary['path']}\nsource={source_detail}\ncookies={summary['cookie_count']}",
+            "\n".join(detail_lines),
         )
     )
 
