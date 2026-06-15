@@ -1,465 +1,596 @@
-# High-Performing Korean LinkedIn Story Templates
+# 범용 한국어 LinkedIn 바이럴 공식
 
-Use this file when drafting or reviewing Korean LinkedIn posts, especially
-builder notes, AI workflow posts, CLI/tooling stories, saved-post analysis, and
-operator essays.
+한국어 LinkedIn 글을 작성·검토할 때 이 문서를 읽는다. 누가 써도 통하는 범용 공식이며,
+특정 인물·제품 전용 내용은 없다.
 
-Do not copy source posts verbatim. Use the observed posts to infer structure,
-pacing, evidence, and story shape. Keep source facts verified before publishing.
+두 축으로 만들었다.
 
-## Data Basis
+- **실측 데이터**: 한국어 LinkedIn 글 2,028건(engagement 보유·중복 제거) 중 reaction_score
+  상위 140건을 6개 렌즈로 분석. 모든 빈도·지표는 이 140건 코호트의 실측값이고, 검증 불가한
+  항목에는 수치를 붙이지 않았다.
+- **검증된 스토리텔링 이론**: 카피라이팅·스토리텔링·SNS 글쓰기 책 7권에서 추출한 프레임워크
+  (출처는 각 항목에 괄호로 표기). 데이터가 "무엇이 터지는가"라면, 이론은 "왜 터지고 어떻게
+  복제하는가"를 준다.
 
-Local sources checked on 2026-06-15:
+원칙: 원문 글을 그대로 베끼지 않는다. 관찰된 글에서 구조·리듬·증거·이야기 모양을 추론해 쓰되,
+발행 전 사실은 검증한다.
 
-- Skim DB: `/Users/seungwonan/Dev/3-tool/skim/data/skim.db`
-- LinkedIn rows in `posts`: 2,549
-- Korean-content LinkedIn rows: 2,145
-- Saved LinkedIn backup:
-  `/Users/seungwonan/Library/Mobile Documents/iCloud~md~obsidian/Documents/llm-wiki/raw/personal/linkedin-saved-posts/20260615-070311/saved-posts.jsonl`
-- Saved backup rows: 1,568
-- Skim rows overlapping saved-post IDs: 109
-- PDF reference folder:
-  `/Users/seungwonan/Library/Mobile Documents/com~apple~CloudDocs/PDF`
+> **말투를 잡으려면 `references/few-shot-examples.md`(실제 흥행글 15편)를 먼저 읽는다 — §13.**
+> §1~12가 "무엇을 쓰나(형식)"라면, 그 파일은 "어떻게 말하나(말투·단어·호흡)"를 잡아준다.
 
-Reaction score:
+---
 
-```text
-reaction_score = likes + comments * 4 + reposts * 8
-```
+## 1. 데이터 기반: 무엇을 보고 만든 공식인가
 
-Korean story score used for inspection:
-
-```text
-korean_story_score =
-  reaction_score
-  + story-marker bonus
-  + author-consistency bonus
-  + saved-overlap bonus
-```
-
-Story markers used only as a rough screen:
-
-- personal scene: `저는`, `제가`, `지난`, `어제`, `오늘`, `처음`
-- tension: `문제`, `실수`, `한계`, `답답`, `위험`, `하지만`, `그런데`
-- transformation: `예전`, `지금`, `결과`, `줄었`, `바뀌`, `만에`, numbers
-- system: `시스템`, `구조`, `워크플로우`, `원칙`, `가이드`, `에이전트`
-- proof: concrete names, tools, companies, counts, artifacts, links, repos
-
-## Core Finding
-
-The strongest Korean LinkedIn posts are not technical explanations.
-
-They are small stories with a strong operating lesson:
-
-```text
-일어난 일
--> 왜 이상했는지
--> 내가 무엇을 바꿨는지
--> 그 결과 어떤 관점이 생겼는지
--> 독자가 가져갈 수 있는 원칙
-```
-
-For Aiden, this means a `linkedin-cli` post should not start with CLI features,
-OAuth, command groups, or scraping boundaries. Start with the human situation:
-
-- saved posts piled up
-- useful ideas became hard to find
-- AI could not read what the human had saved
-- a CLI was built to pull that knowledge into the local workflow
-- a LinkedIn automation warning forced the product boundary to become explicit
-
-## Korean Top Signal
-
-Top Korean posts by story-weighted score, deduped structurally:
-
-| Rank | Pattern | What made it work | Use for Aiden |
-|---:|---|---|---|
-| 1 | Authority + provocative thesis | Credible background, hard claim, then system proof | Use when making a strong claim about AI workflows |
-| 2 | Before/after workflow compression | Old time, new time, error source, specialist-agent system | Use when showing saved-post cleanup or AI knowledge reuse |
-| 3 | Practical checklist with high pain | Clear pain, exact file/tool, numbered usage | Use only after the story earns the checklist |
-| 4 | Non-expert transformation | Zero-baseline protagonist, concrete result after a short time | Use for education and workshop posts |
-| 5 | Build log with real cost | Time, constraint, usage limit, money, fatigue, artifact | Use for development diaries |
-| 6 | Problem-to-system essay | Broken approach, why it fails, new operating model | Use for CLI/product thesis |
-| 7 | Resource giveaway with origin | Why the resource was made, who needed it, what is inside | Use for templates or open docs |
-| 8 | Market movement from field scene | Event/meeting/community scene, then broader read | Use when tying tool work to AX/agent trends |
-
-The best-performing Korean examples usually contain at least four of these:
-
-- specific protagonist
-- uncomfortable problem
-- visible artifact
-- quantified or named proof
-- changed belief
-- short paragraph rhythm
-- practical takeaway
-
-## Author Consistency Signal
-
-Single viral posts are noisy. For drafting defaults, prioritize authors who
-posted repeatedly and still averaged strong reactions.
-
-| Author | Korean posts | Avg score | 500+ hits | 1,000+ hits | Structural lesson |
-|---|---:|---:|---:|---:|---|
-| Jeongmin Lee | 40 | 487.1 | 10 | 8 | Practical AI/operator posts with saved-resource framing |
-| Seungpil Lee | 31 | 346.2 | 6 | 4 | External signal + simple explanation + why it matters |
-| Goobong Jeong | 53 | 227.9 | 6 | 2 | Community/movement framing and reflective operator thesis |
-| 한성국 | 17 | 541.4 | 4 | 2 | Tool education, checklists, direct usage value |
-| Jiin Lee | 8 | 721.0 | 2 | 2 | Non-expert transformation and resource origin story |
-| Seeyong Lee | 14 | 295.9 | 2 | 1 | Complex system explained through decision structure |
-| Kyunghun Lee | 15 | 263.0 | 2 | 1 | Organization-level AI adoption framed as a mistake/turning point |
-| 조여준 Ethan Cho | 25 | 179.8 | 2 | 1 | Emotional market reflection with a clear human stance |
-
-Interpretation:
-
-- `Resource/checklist` is frequent, but it can become shallow if it starts as
-  a lead magnet.
-- `Authority thesis` and `before/after system` have stronger average scores.
-- `Build log + consequence` is the best fit for Aiden's `linkedin-cli` story.
-- The most durable format is not "I built a tool." It is "I hit a real workflow
-  problem, built around it, then learned where the boundary is."
-
-## Pattern Distribution
-
-Heuristic scan of the top 100 Korean reaction-ranked posts:
-
-| Signal | Count | Median read |
-|---|---:|---|
-| Listicle/explainer | 68 | Works for saved value, but needs a strong first line |
-| Resource/checklist | 46 | Performs well when the resource is concrete |
-| Problem/tension | 46 | Needed for comments and dwell time |
-| Field scene | 46 | Gives credibility and makes the post feel lived |
-| Market movement | 41 | Works when tied to a concrete observation |
-| Build log | 37 | Strong fit for developer/tooling posts |
-| Authority thesis | 12 | Less frequent, higher average score |
-| Before/after system | 7 | Less frequent, highest average score among story formats |
-
-Primary structure estimate in the same cohort:
-
-| Primary format | Count |
-|---|---:|
-| Resource/checklist | 32 |
-| Authority thesis | 12 |
-| Problem-to-system | 11 |
-| Scene build log | 10 |
-| Market movement | 9 |
-| Build log | 8 |
-| Before/after system | 7 |
-| Listicle/explainer | 3 |
-| Other | 8 |
-
-Draft implication:
-
-- Use listicles for follow-up posts, not the first story post.
-- Use resource/checklist only after explaining why the resource had to exist.
-- Use before/after or build-log structure when the post is about a tool you made.
-
-## PDF Cross-Check
-
-This is a synthesis from local writing/storytelling PDFs, not a quote bank.
-
-| Source | Relevant principle | LinkedIn writing implication |
-|---|---|---|
-| `무기가_되는_글쓰기_ocr.pdf` | Readers scan the top first; product description alone does not persuade; the customer journey matters | Do not open with feature lists. Put the strange event or user pain at the top |
-| `일_잘하는_사람은_글을_잘_씁니다_ocr.pdf` | Know the reader, use easy structure, add story when persuasion is needed | A LinkedIn post needs a reader-facing reason, not just a maker-facing explanation |
-| `스토리_설계자_ocr.pdf` | Customers are not primarily interested in the seller; message must enter the customer's desire/problem | Make the reader feel "this is my saved-post/AI workflow problem" |
-| `무조건_팔리는_스토리_마케팅_기술_100_ocr.pdf` | Unexpected events move emotion; a story needs protagonist and obstacle | The LinkedIn warning screenshot is a hook, but the obstacle is the platform boundary |
-| `Ship-30-for-30-KOR.pdf` | Publish repeatedly, observe data, increase specificity, define audience | Use repeated post feedback; write for AI builders/operators, not everyone |
-| `Dont Be Such a Scientist.epub` | Narrative begins when a problem appears; plain information is weaker than problem-solution movement | Use ABT: I saved a lot AND wanted reuse, BUT AI could not read it, THEREFORE I built the CLI |
-| `왜의_쓸모.pdf` | Reasons are social and contextual; the right "why" depends on the audience | Explain why this matters to builders and educators, not only why it was technically interesting |
-
-## Template 1: Incident-Led Build Story
-
-Best fit for the `linkedin-cli` post.
-
-Use when there is a screenshot, warning, bug, account-risk moment, surprising
-failure, or uncomfortable boundary.
-
-```text
-[Unexpected incident.]
-[Short emotional reaction or action.]
-
-사실 제가 하려던 건 [misunderstood thing]이 아니었습니다.
-
-문제는 더 개인적이었습니다.
-
-[Ordinary world: repeated behavior.]
-[Why that behavior became a problem.]
-
-사람은 [action]했는데,
-AI는 [cannot-use state]였습니다.
-
-그래서 [artifact/tool/workflow]를 만들기 시작했습니다.
-
-처음 목표는 단순했습니다.
-[Plain-language goal.]
-
-그런데 만들다 보니 질문이 생겼습니다.
-[Boundary question.]
-
-기술적으로 되는 것과
-해도 되는 것은 다릅니다.
-
-그래서 이 도구의 방향은 [not automation]이 아니라
-[knowledge/workflow/safety thesis]가 됐습니다.
-
-[Final broader lesson.]
-[Soft CTA for next post.]
-```
-
-Synthetic `linkedin-cli` example:
-
-```text
-링크드인을 자동화하려던 게 아니었는데,
-링크드인에게 자동화 경고를 받았습니다.
-
-처음엔 조금 웃겼고,
-바로 멈췄습니다.
-
-제가 만들던 건 DM 자동 발송 도구도 아니고,
-좋아요 자동화도 아니고,
-댓글 매크로도 아니었습니다.
-
-문제는 더 개인적이었습니다.
-
-저는 좋은 글을 너무 많이 저장합니다.
-링크드인에 저장하고,
-X에 저장하고,
-스레드와 레딧과 유튜브에도 저장합니다.
-
-그런데 필요할 때는 거의 못 찾습니다.
-
-분명히 봤고,
-분명히 저장했고,
-언젠가 써먹으려고 했는데
-
-정작 필요할 때는 제 머리에도 없고,
-AI도 읽을 수 없습니다.
-
-사람은 저장했는데,
-AI는 못 읽는 상태.
-
-이게 싫어서 linkedin-cli를 만들기 시작했습니다.
-
-목표는 단순했습니다.
-
-앱 안에 갇힌 저장글을
-내 로컬 작업 환경과 AI가 다시 쓸 수 있는 형태로 꺼내오는 것.
-
-그런데 만들다 보니 더 중요한 질문이 생겼습니다.
-
-어디까지 자동화해도 되는가?
-
-기술적으로 되는 것과
-해도 되는 것은 다릅니다.
-
-그래서 이 CLI의 방향도 더 분명해졌습니다.
-
-많이 클릭하는 도구가 아니라,
-내가 쌓아둔 정보를 다시 쓸 수 있게 만드는 도구.
-
-그리고 위험한 선을 넘기 전에
-멈출 줄 아는 도구.
-
-SNS 자동화 툴을 만들고 싶은 게 아닙니다.
-
-매일 흘려보내는 좋은 정보들을
-내 AI가 다시 사용할 수 있게 만들고 싶습니다.
-```
-
-Do not add technical details before the reader cares:
-
-- Avoid early `read.*`, OAuth, cookies, API groups, GraphQL, browser session.
-- Mention implementation only as proof later: local backup, JSON/DB, search,
-  summary, dry-run, guardrail.
-
-## Template 2: Before/After System Compression
-
-Use when a workflow got faster, safer, or more reusable.
-
-```text
-예전엔 [task] 하나에 [old cost]가 걸렸습니다.
-
-지금은 [new cost]로 끝납니다.
-
-차이는 [tool name]이 아니었습니다.
-[operating principle]이었습니다.
-
-문제는 [old failure mode]였습니다.
-
-그래서 구조를 바꿨습니다.
-
-1. [system step]
-2. [system step]
-3. [system step]
-
-결과는 [measured or observed result].
-
-제가 배운 건 이겁니다.
-[portable lesson]
-```
-
-Use for Aiden:
-
-- saved posts cleanup
-- lecture proposal drafting
-- AI course material reuse
-- local knowledge workflows
-
-## Template 3: Authority Thesis With Proof
-
-Use when Aiden can speak from direct operator experience.
-
-```text
-저는 [role/context]를 하고 있습니다.
-
-솔직하게 말하면,
-[provocative but defensible claim].
-
-과장처럼 들릴 수 있습니다.
-그런데 [specific scene/proof]를 보면 생각이 달라집니다.
-
-제가 본 문제는 [surface belief]가 아니었습니다.
-[real mechanism]이었습니다.
-
-구조는 이렇습니다.
-
-1. [mechanism]
-2. [mechanism]
-3. [mechanism]
-
-그래서 [audience]에게 필요한 건 [recommendation]입니다.
-```
-
-Good for:
-
-- AI education philosophy
-- agent workflow design
-- content archive systems
-- "prompt is not the product, context is" style claims
-
-## Template 4: Non-Expert Transformation
-
-Use for education, workshops, and student/client stories.
-
-```text
-[Audience/person]은 처음에 [zero-baseline state]였습니다.
-
-[Concrete limitation.]
-
-그래서 처음부터 [advanced topic]을 가르치지 않았습니다.
-[first simple step]부터 했습니다.
-
-그리고 [time period] 뒤,
-[visible artifact/result]가 나왔습니다.
-
-중요한 건 [tool]이 아니었습니다.
-[changed belief or capability]였습니다.
-
-이 사례를 보면서 배운 점은 [lesson].
-```
-
-This is the strongest education template because the protagonist is not the
-teacher. The protagonist is the learner whose state changes.
-
-## Template 5: Resource With Origin Story
-
-Use when sharing a guide, checklist, template, or repo.
-
-```text
-[Resource]를 만들었습니다.
-
-처음부터 공유하려고 만든 건 아니었습니다.
-
-[Specific person/team/myself]이 계속 [problem]에서 막혀서
-내부용으로 먼저 만들었습니다.
-
-안에는 [contents]가 있습니다.
-
-이걸 쓰면 좋은 상황:
-- [situation]
-- [situation]
-
-쓰면 안 좋은 상황:
-- [bad fit]
-
-필요하신 분들을 위해 [delivery method]로 정리해두겠습니다.
-```
-
-Rule:
-
-- Never open with "무료 배포합니다" unless the resource itself is the story.
-- Open with the problem that forced the resource to exist.
-
-## Template 6: Field Scene To Market Read
-
-Use after events, workshops, community meetings, client sessions, or tool demos.
-
-```text
-[Specific place/event/time]에서 [scene]을 봤습니다.
-
-겉으로 보면 [surface interpretation]처럼 보였습니다.
-하지만 제가 본 건 [deeper pattern]이었습니다.
-
-[Concrete observations.]
-
-이게 중요한 이유는 [market/workflow implication]입니다.
-
-앞으로 [audience]는 [new behavior]를 해야 합니다.
-
-저는 그래서 [personal next action]을 하고 있습니다.
-```
-
-Good for:
-
-- AX education market
-- agent tooling adoption
-- Korean builder community
-- corporate AI workflow shifts
-
-## Draft Review Checklist
-
-Score every draft before publishing.
-
-| Criterion | Pass condition |
+| 항목 | 값 |
 |---|---|
-| Incident | The first 2 lines contain a concrete event, artifact, result, or contradiction |
-| Protagonist | Someone changes: Aiden, a student, a team, a client, or a builder |
-| Obstacle | There is a real problem, boundary, risk, or friction |
-| Action | The post shows what was built, changed, tested, or decided |
-| Result | There is a number, artifact, screenshot, named tool, or observed change |
-| Lesson | The ending gives a portable operating principle |
-| Reader fit | The reader can see why this matters to their workflow |
-| Restraint | Technical details appear only after the story earns them |
-| Integrity | No fake scarcity, fake numbers, or copied phrasing |
+| 모집단 | 한국어 LinkedIn 글 **2,028건** (engagement 보유, 중복 제거 완료) |
+| 분석 코호트 | reaction_score **상위 140건** |
+| reaction_score 정의 | `likes + comments×4 + reposts×8` (댓글 4배, 리포스트 8배 가중) |
+| 좋아요 분포(전체 모집단) | p50=23 · p75=60 · p90=134 · p95=221 · p99=474 · max=2,694 |
+| 글 길이(단어) | 전체 중앙값 145 / 코호트 중앙값 **208** / 최소 3 / 최대 713 |
 
-Hard fail:
+### reaction_score 가중치가 말하는 것
 
-- It starts with a definition.
-- It starts with a feature list.
-- It explains implementation before the problem.
-- It says "이게 중요합니다" before showing why.
-- It has a hook, but no protagonist or change.
+점수 공식에서 **리포스트(8배) > 댓글(4배) > 좋아요(1배)**다. 도달·전파를 노린다면 리포스트가
+가장 점수 효율이 높고, 좋아요만 모으는 글은 같은 노출에서 점수 천장이 낮다. 코호트 1위가
+reaction_score 5,798(좋아요 2,694·댓글 410·리포스트 183)인데, 리포스트 183건이 8배 가중으로
+1,464점을 기여한 게 결정타였다. 이 가중치가 아래 모든 전략 판단의 기준이다.
 
-## Default Recommendation For Aiden
+### 길이 분포: 코호트 실측
 
-For Aiden's Korean LinkedIn posts, use this priority:
+| 길이대(단어) | 코호트 건수 |
+|---|---:|
+| 3–80 (초단문) | 15 |
+| 81–150 | 28 |
+| 151–250 | **40 (최대 군집)** |
+| 251–400 | 27 |
+| 401–700+ (장문) | 30 |
 
-1. Incident-led build story for CLI/tooling/product posts.
-2. Before/after system compression for workflow wins.
-3. Non-expert transformation for education and workshop posts.
-4. Authority thesis with proof for opinionated AI workflow posts.
-5. Resource with origin story for templates, guides, repos, and checklists.
-6. Field scene to market read for events and community observations.
+- **상위권은 짧은 편이다.** 코호트 중앙값 208단어. 길고 서정적인 글이 아니라 모바일에서 끝까지
+  스캔되는 글이 상위에 많다.
+- **중간 길이(151–250)가 최대 군집이다.** "250단어는 안 터진다"는 통념은 이 데이터로 반증된다.
+  다만 이 구간 흥행글은 거의 전부 한 줄 리듬·번호 구조·구체 수치를 갖췄고, 같은 길이에 벽돌 문단·
+  일반론만 있으면 모집단 하위로 빠진다. **길이가 아니라 구조와 증거가 변수다.**
+- **초단문(15건)과 장문(30건)도 양 끝에서 충분히 흥행한다.** 길이는 "담을 사실의 밀도"에 맞추는
+  것이지, 특정 단어수를 노리는 게 아니다.
 
-For the `linkedin-cli` story specifically:
+### 댓글 수의 정체
 
-- Primary structure: Incident-led build story.
-- Secondary structure: ABT plus STAR.
-- Hook: LinkedIn automation warning screenshot.
-- Real protagonist: Aiden trying to make saved knowledge usable by AI.
-- Real obstacle: saved content trapped inside platforms, plus automation-risk
-  boundary.
-- Real artifact: `linkedin-cli` and local saved-post backup.
-- Product thesis: not "automate LinkedIn", but "turn social knowledge into a
-  local AI-readable workflow without crossing unsafe platform boundaries."
+댓글이 많다고 좋은 글이 아니다. 코호트에서 댓글이 좋아요를 초과하는 글은 **10건**, 좋아요의 1.5배
+이상인 글은 **8건**인데, 이 8건은 거의 전부 "자료를 댓글/DM으로 받게 잠근" 게이팅 설계의 산물이다.
+댓글 수는 콘텐츠 품질이 아니라 **페이로드(핵심 가치)를 어디 뒀느냐의 함수**다.
 
+---
+
+## 2. 핵심 원리: 왜 이 글들이 터지는가
+
+데이터에서 반복되는 패턴은 글쓰기 책의 검증된 원리와 정확히 겹친다. 아래 7개가 모든 섹션의 바닥에
+깔린다.
+
+1. **정보 나열(AND…AND)이 아니라 문제→해결 운동(ABT)으로 쓴다.** "그리고…그리고…"만 있는 글은
+   정비 매뉴얼처럼 지루하다. **동의(AND) → 모순(BUT) → 결과(THEREFORE)**의 긴장이 있어야 서사다.
+   *(Don't Be Such a Scientist)* — 데이터의 "전후 시간 절감"·"통념 역류" 훅이 이 운동을 그대로 한다.
+
+2. **첫 줄이 성패의 99%.** 작성 시간의 절반을 첫 줄에 쓴다. 모바일 미리보기 'see more' 앞에 걸리는
+   한 줄이 스크롤을 멈추느냐를 결정한다. *(Copywriting Secrets)* — 코호트 상위 대부분이 첫 3줄 안에
+   유형이 즉시 식별되는 강한 훅을 쓴다.
+
+3. **결핍이 감정이입을 만든다.** 풍족·완벽·과거의 영광엔 아무도 감동하지 않는다. '부족하거나 빼앗긴
+   주인공'이 노력해야 마음이 움직인다. *(무조건 팔리는 스토리 마케팅 기술 100)* — "60대 사장님",
+   "비개발자", "나는 독선적인 사람이었다" 같은 약자·고백 훅이 댓글·공감을 끈다.
+
+4. **사람은 감정으로 사고 이성으로 합리화한다. 기능이 아니라 '의미'를 말하라(WIIFM).** 독자는
+   "이게 나한테 무슨 이득?"만 본다. *(Copywriting Secrets)* — 데이터에서 순수 자격증명 글
+   (퇴사·이직 인사)은 좋아요는 받아도 리포스트가 0에 수렴한다. "내가 누구인가"는 "당신이 따라 할
+   행동"으로 번역되지 않으면 전파되지 않는다.
+
+5. **글쓰기 실력이 아니라 '목표'를 먼저 정한다.** 막연히 좋은 글이 아니라 도달·팔로우 전환·리드 확보
+   중 무엇을 노리는지 정하고 그 수단으로 쓴다. *(구독자와 리드 확보를 위한 SNS 글쓰기)* — §3의
+   공개형/게이트형 분기가 이 선택이다.
+
+6. **"모두를 위한 글 = 아무도 위하지 않은 글." 한 사람으로 좁힌다.** *(Ship 30 for 30)* — 데이터에서
+   대상을 구체적으로 좁힌 글("인사담당자를 위한")이 막연한 글보다 댓글 전환이 높다.
+
+7. **실화 철칙.** 모든 사건은 실제여야 한다. 과장은 쓰되 반드시 사실 — 거짓이 섞이면 돌이킬 수 없는
+   감점이다. *(무조건 팔리는 스토리)* — 코호트 안에서 "진정성이 안 느껴진다", "인증 하나도 없다"는
+   저격 글이 직접 좋아요를 모은다.
+
+---
+
+## 3. 두 갈래 운영 방식: 공개형 vs 게이트형
+
+코호트를 가르면 인게이지먼트 설계가 크게 둘로 나뉜다. 단 깔끔히 둘로 떨어지진 않는다 — 1위 글처럼
+도발 단언·증거·희소성을 한 글에 적층해 양쪽을 모두 터뜨린 사례도 있고, 다수가 둘 사이 어딘가다.
+그래도 **발행 전에 "이 글의 1차 목표가 도달이냐 리드냐"를 정하면** 훅·길이·CTA가 일관돼진다.
+
+| | 공개형 (본문 완결) | 게이트형 (페이로드 잠금) |
+|---|---|---|
+| **주 목표** | 도달·권위·전파 | 리드 확보(DM 목록)·팔로워 증가 |
+| **페이로드 위치** | 본문에 전부 공개 (글 자체가 완결 자료) | 본문엔 목차·결과만, 실물은 "1촌+댓글→DM"으로 잠금 |
+| **대표 포맷** | 번호 가이드 / 도구 큐레이션 / 뉴스 해설 | 자료배포 대괄호 / 전후 시간 절감 / 비밀누설 |
+| **지표 모양** | 리포스트 비중 높음(좋아요의 20~40%), 댓글 한 자릿수~십수 건 | 댓글이 좋아요를 1.5~4.0배 초과, 리포스트 한 자릿수 |
+| **실측 예(코호트)** | 좋아요 1,416·댓글 13·리포스트 308 | 좋아요 383·댓글 1,174·리포스트 33 |
+| **CTA** | "저장하세요 / 링크는 댓글에" | "1촌 신청 후 댓글에 'OOO' 남기면 DM" |
+| **진정성 리스크** | 낮음 (정보가 곧 증거) | 높음 (게이팅이 노골적이면 장사꾼 톤) |
+
+**점수 효율:** 리포스트 가중치가 8배라 공개형의 reaction_score 천장이 더 높다. 게이트형은
+댓글(4배)로 점수를 올리지만 리포스트가 거의 안 붙어 천장이 낮다. 둘을 무리하게 섞기보다 1차 목표를
+정하고 그 설계에 집중하는 편이 안정적이다.
+
+---
+
+## 4. 훅 — 첫 1~3줄
+
+첫 줄이 공개형 글이냐 게이트형 글이냐를 사실상 결정한다. 먼저 8유형 중 하나를 의식적으로 고르고
+(4-1), 그 유형에 맞는 헤드라인 공식에 빈칸을 채운다(4-2).
+
+### 4-1. 훅 8유형 도감
+
+> 유형별 "약 N건" 식 정밀 빈도는 코호트에 라벨링 집계가 없어 제시하지 않는다. 대신 각 유형이 어느
+> 지표를 끌어내는지와 구조만 표기한다.
+
+| 훅 유형 | 끌어내는 지표 | 운영 | 구조 (예시 1줄) |
+|---|---|---|---|
+| **① 자료배포 대괄호** | 댓글 압도 | 게이트 | `[(무료 공유) {대상}도 따라하는 {결과물}]` |
+| **② 권위 선언 + 도발** | 좋아요·리포스트(도발 시 댓글) | 공개 | `저는 {검증 가능한 소속} 출신입니다. {통념과 충돌하는 주장}.` |
+| **③ 전후 시간 절감** | 게이트 결합 시 댓글, 수치만이면 리포스트 | 둘 다 | `예전엔 {작업}에 {X분} 썼습니다. 지금은 {Y분}.` |
+| **④ 숫자 리스트 예고** | 리포스트 압도(저장) | 공개 | `{10명 중 9명이/상위 0.3%는} {X}한다. {N가지}로 정리했습니다. 저장하세요.` |
+| **⑤ 비밀공유/내부누설** | 댓글 폭발, 리포스트 거의 0 | 게이트 | `이거 공유해도 되나 모르겠는데 🫢 원래 {내부용}인데...` |
+| **⑥ 고백/취약 1인칭** | 좋아요+댓글(공감), 리포스트 약함 | 공개 | `{감정 한 문장만}` (예: `나는 독선적인 사람이었다`) |
+| **⑦ 뉴스 단독 선언** | 리포스트 위주(전파) | 공개 | `{주어}가 {했다}.` (과거완결형, 군더더기 0) |
+| **⑧ 통념 역류** | 좋아요+댓글(토론), 리포스트 낮음 | 공개 | `{통념을 따랐다}. 실수였습니다.` |
+
+**유형별 지침**
+
+- **① 자료배포 대괄호** — 대괄호 안에 `대상+결과물+무료` 3요소를 압축. 코호트에서 첫 줄이
+  대괄호로 시작하는 글은 8건이며 그중 실제 자료배포·게이트형은 소수다(나머지는 후기·공지·채용).
+  대상 페르소나를 **구체적으로 좁힐수록**(막연한 "직장인" 대신 "인사담당자") 댓글 전환이 높다.
+- **② 권위 선언 + 도발** — 첫 줄=검증 가능한 권위(전 직장·구체 수치·외부 권위), 둘째 줄=통념과
+  충돌하는 한 문장. "미친 소리 같죠?"식 정확한 메타코멘트는 코호트 전체에서 **단 1건**에만 나온다 —
+  특정 글의 어투이지 공식이 아니다. 일반화할 핵심은 **"검증 가능한 권위 1줄 + 통념과 충돌하는 주장
+  1줄"**이고, 도발 문구는 자유롭게 쓰되 권위가 약하거나 미검증이면 코호트 내에서 "인증 하나도 없다"고
+  **직접 저격당한다.**
+- **③ 전후 시간 절감** — 배수("10배")보다 실제 시간("40분→10분")이 더 잘 박힌다. 비포의 고통을
+  1줄로 생생히. 게이트와 결합하면 코호트 최상위 댓글 괴물이 나온다(좋아요 383 → 댓글 1,174).
+  **§8에서 보듯 댓글 아웃라이어 상위를 가장 많이 차지하는 게 이 유형이다.**
+- **④ 숫자 리스트 예고** — 결핍/지위 프레임("상위 0.3%는 이거 한다")으로 열고 "N가지로 정리 +
+  저장하세요" 명령. 숫자는 **5~12 사이**가 저장 부담과 가치의 균형점. 코호트 최상위 리포스트 글들
+  (리포스트 308·227·219·211)이 이 유형에 몰려 있다.
+- **⑤ 비밀공유/내부누설** — "공유해도 되나"로 망설임을 연기하고 그 자료가 비싸다는 근거(제작 기간·
+  인원)를 1줄 덧붙여 희소성 부여. 코호트에서 호기심 이모지(🤫🫢👀)를 쓴 글은 4건이며, 댓글은
+  폭발하되 리포스트는 거의 0에 수렴한다(좋아요 196·댓글 551·리포스트 1 같은 극단 편향).
+  **진짜 내부 자료일 때만** 안전하다.
+- **⑥ 고백/취약 1인칭** — 정보·권위 없이 감정 한 문장으로만. **반말체**가 취약함을 강화한다(존댓말
+  정보글과 대비). 진짜 겪은 일이어야 하고, 흥행 수단으로만 쓰면 "진정성이 안 느껴진다"는 반작용이
+  코호트 안에 등장한다.
+- **⑦ 뉴스 단독 선언** — "주어+했다" 과거완결형 한 문장. 사건이 클수록 짧게. 감탄사는 **한 개만.**
+  단순 전달이면 원 출처에 도달이 밀리므로 "직접 써봤더니"식 1차 검증을 붙여 차별화하라.
+- **⑧ 통념 역류** — 메가토픽 한가운데서 통념을 1문장으로 부정("전담팀을 만들었습니다. 실수였습니다.").
+  반드시 본인 실패담·실측을 근거로 깔아 "시니컬한 훈수"가 아니라 "겪어본 사람의 교정"으로 포지션하라.
+
+### 4-2. 헤드라인·후크 공식 뱅크 *(Copywriting Secrets · Ship 30 · 왜의 쓸모 · 썸네일 공식 19)*
+
+훅 유형을 고르면 아래 공식에 빈칸만 채운다. **명확함 > 영리함** — 영리한 헤드라인은 스크롤당하고
+명확한 헤드라인은 클릭당한다. 리스트를 만들 때 처음 3~4개는 뻔하다. **5번째부터 진짜가 나오니**
+공식마다 후보를 여러 개 뽑고 가장 센 하나만 남긴다.
+
+**A. 결과·방법 약속형** (→ 훅 ③④)
+- `[기간] 만에 [결과]하는 법`
+- `[과거에 다 실패한] 사람도 [기간] 만에 [결과]하는 법` (만능 시작 문구)
+- `[결과]하는 빠르고 쉬운 방법 [홀수 3·5·7·9]가지` — 홀수가 호기심+신뢰를 함께 올린다
+
+**B. 숫자·리스트형** (→ 훅 ④, 저장률↑)
+- `[집단]을 위한 [무엇] TOP [N]`
+- `[전문가/N년차]가 알려주는 [목표] 잘하는 N가지`
+- `[X]에서 N명이 방금 [Y]했다. 그 이유는 다음과 같다.`
+
+**C. 역설·반전형** (→ 훅 ⑧, 직장인 청중에 강함)
+- `[독자 머릿속 키워드] + [상식과 다른 주장]` (예: "승진은 역량이 아니라 태도다")
+- `[좋다고 믿는 행동]하면 [의외의 손해] 됩니다`
+- `[좋은 평판의 대상]은 사실 [반대 평가]입니다`
+
+**D. 실수·경고형** (→ 훅 ⑧, 가끔만 — 남용은 신뢰를 깎는다)
+- `[집단]이라면 누구나 피해야 할 [주제] 실수 N가지`
+- `경고: [집단]이라면 알아야 할 [비법]`
+
+**E. 후크·충돌형** (→ 훅 ②⑦, 호기심 격차 최대)
+- `[예상 밖 정체성의 인물]이 [의외의 도구]로 [기간] 만에 [놀라운 결과]를 낸 사연` (후크 포인트)
+- `[최악의 시점]에 [평소엔 당연한 일]을 하는 단 하나의 [대상]` — 상충하는 두 요소를 붙여 '왜?'를 즉발
+- `왜 [X]는 [Y]를 했을까?` — 모든 이유 글의 기본 질문틀 *(왜의 쓸모)*
+
+**F. 충격·동의 오프너** (→ 훅 ⑥⑦)
+- `알고 계셨습니까? [충격적 통계/사실]`
+- `[누구나 끄덕일 평범한 사실]. 그런데 [예상 못한 문제]였다.` — ABT의 AND→BUT 전환
+
+> **호기심 격차 규칙:** 시작과 끝(결과)은 알려주되 '중간(해법)'은 감춘다. 단 본문이 그 약속을
+> 반드시 채운다 — 채우면 클릭베이트가 아니다. *(Ship 30)*
+
+---
+
+## 5. 본문 구조·길이·리듬
+
+### 5-1. 바닥 골격: 한 줄 = 한 문단
+
+코호트 흥행글의 약 절반(짧은 줄 리듬 휴리스틱 ~70건)이 이 골격이다. 마침표마다 줄을 끊어 한 문장이
+곧 한 문단이 되게 하고, 의미 단위마다 빈 줄을 넣어 모바일에서 계단처럼 읽히게 한다.
+
+- **실행:** 초안을 쓴 뒤 모든 문장을 마침표 기준으로 줄바꿈. 3문장 이상 붙은 문단은 쪼갠다.
+- **강조:** 단정문(`실수였습니다.`)은 일부러 한 줄 단독으로 둔다.
+- **1/3/1 리듬** *(Ship 30)*: 한 문장 훅 → 세 문장 본문(명확화·신뢰·결론 유도) → 한 문장 강한
+  마무리. 1/1/1(가벼움 과다)·5/5/5(지루함)은 피한다.
+- **예외:** 전부 한 줄로 끊으면 트윗 더미처럼 가벼워진다. 기술 심층·논증 글은 단락을 유지하되 단락
+  사이 여백을 키운다.
+
+### 5-2. 스토리 구조 프레임워크 (택1)
+
+150~250단어에 공식을 두 개 섞지 않는다. 하나만 골라 끝까지 끌고 간다.
+
+**프레임워크 1 — ABT (서사의 척추)** *(Don't Be Such a Scientist)* — 모든 글의 기본값
+1. **AND (설정):** 누구나 끄덕일 통념 1~2문장. 전문가가 '뻔하다'며 건너뛰는 바로 그 단계 — 생략 금지.
+2. **BUT (모순):** "그런데 현실은 달랐다"로 갈등·반전. 여기서 긴장이 생긴다.
+3. **THEREFORE (결과):** "그래서 이렇게 했다/이렇게 본다"로 행동·관점 제시.
+- 퇴고: 본문의 '그리고/~며'를 가능한 만큼 '하지만/그래서'로 치환.
+
+**프레임워크 2 — 스토리 황금률 (주인공-목표-장애물)** *(무조건 팔리는 스토리)* — 훅 ⑥, 약자 서사에
+1. **부족한 주인공:** 결핍·약점 상태를 먼저(사람 1명, 실화).
+2. **험난한 목표:** 노력하면 닿을 듯한 높은 목표.
+3. **장애물·갈등:** "나무에 올린 뒤 돌을 던져라" — 술술 풀리면 안 읽힌다. 장애물 1~2개 구체적으로.
+4. **극복·결과 + 기대치 1% 초과:** 결과를 짧게 보여준 뒤 독자가 예상 못 한 작은 디테일 한 끗으로 여운.
+
+**프레임워크 3 — PAS / BAB (세일즈 뼈대)** *(Copywriting Secrets)* — 훅 ①③, 게이트·도구 글에
+- **PAS:** 문제(Problem) → 동요(Agitate: "즉, ___입니다"로 고통·대가를 한 번 더 찌르기) → 해결(Solution).
+  *동요가 빠지면 안 팔린다.*
+- **BAB:** 비포(현재 문제) → 애프터(해결된 미래 그림으로 감정 전환) → 브리지(그 길이 여기 = 내 방법).
+  콜드 청중에 강함.
+
+**프레임워크 4 — 미스터리 (결과→원인)** *(왜의 쓸모)* — 훅 ⑦, 사건·분석 글에
+무대를 하나의 시간·장소로 좁히고, "왜 ___였을까?"를 던진 뒤 원인을 추적한다. 부수 정보는 과감히
+생략하되 남긴 인과는 사실이어야 한다. 끝에 일반화 교훈 한 줄.
+
+**프레임워크 5 — 황금 교차로 (How-to에 스토리 주입)** *(Ship 30)* — 훅 ④, 번호 가이드에
+도입 1~2문장에 짧은 개인 스토리(밑바닥→고난→결과)를 깔고 실행 N단계로 잇는다.
+법칙: "독자는 실행 조언을 얻으러 오지만, 개인적 이야기 때문에 머문다."
+
+### 5-3. 본문 아키텍처 3종 (한 줄 골격 + 프레임워크를 얹는다)
+
+| 아키텍처 | 구조 | 끌어내는 지표 |
+|---|---|---|
+| **번호 매긴 가이드** | 5~12개 항목, 각 항목 = `소제목 + 2~4문장 + → 결론` | 리포스트·저장 |
+| **전후 압축** | `옛 방식+시간 → 새 방식+시간`을 초반에 박고 결과 숫자를 단독 줄로 | 댓글(게이트 결합 시) |
+| **서사 아크** | `고백 → 사건 → 반전 → 보편 교훈` 4박자, 각 박자 2~3문장 | 좋아요+댓글(공감) |
+
+- **번호 가이드:** 헤더에 시각 마커(①/❶/1️⃣)를 끝까지 일관(코호트 번호 마커 25건). 항목 끝마다
+  `→`로 한 줄 테이크어웨이. 단 각 항목에 **실측·구체값(숫자·명령어·반례)이 없으면** "리스트를 위한
+  리스트"로 읽혀 저장은 돼도 댓글이 안 붙고, AI 생성 티가 가장 잘 나는 포맷이다.
+- **서사 아크:** 첫 문장을 약점/실패 선언으로. 고백이 "겸손을 가장한 자랑"으로 번지면 진정성이 깨진다.
+
+### 5-4. 길이: 사실의 밀도에 맞춰라
+
+| 길이대 | 언제 | 끌어내는 지표 |
+|---|---|---|
+| **초단문 (3~80단어, 15건)** | 하나의 강한 사실/선언만 있을 때 | 좋아요·리포스트(빠른 공감/전파) |
+| **중간 (81~250단어, 68건)** | 번호 가이드·전후 비교의 표준 길이 | 리포스트·댓글(구조·증거가 있을 때) |
+| **장문 (401~700단어, 30건)** | 도구·구조·현상·산업 이슈를 끝까지 해부할 때 | 리포스트·저장(레퍼런스 가치) |
+
+길이대 자체가 흥행을 좌우하지 않는다. 같은 151~250단어라도 구조·증거가 있으면 상위, 일반론이면
+하위다. 장문을 벽돌 문단으로 가면 내용이 좋아도 안 읽힌다 — 한 줄 리듬 + 소제목으로 피로를 상쇄한다.
+
+---
+
+## 6. 인게이지먼트 설계 — 효과와 진정성 경계
+
+페이로드를 어디 두느냐가 인게이지먼트 종류를 결정한다.
+
+| 장치 | 코호트 실측 | 효과 | 진정성 경계 |
+|---|---|---|---|
+| **키워드 댓글 게이트** `1촌+댓글 'OOO'→DM` | 댓글>좋아요 8건이 이 설계 | 댓글 1.5~4.0배 폭발, 팔로워 동반 증가 | 본문에서 가치(목차·스펙) 증명 필수. 자료 부실하면 신뢰 역효과 |
+| **저장 명령** `저장하세요` | "저장" 언급 16건 | 리포스트·좋아요, 캡처 재공유 | 정보가 곧 낡으면 저장가치 0 |
+| **단축링크 `lnkd.in`** | 44건 | 외부 도달 페널티 일부 우회 | "링크 낚시"로만 보이면 클릭 후 이탈 |
+| **"링크는 댓글에"** | 게이트·뉴스형에 산재 | 도달 페널티 회피 + 댓글창 클릭 유도 | 본문 가치 약하면 댓글 보러 들어왔다 이탈 |
+| **마감·희소성** `N부 한정 / N월까지만` | 게이트형에 종종 동반 | 즉시 댓글 압박, 1회성 임팩트 큼 | 가짜 마감 반복 시 신뢰 붕괴 |
+
+> 저장 명령(16건)과 단축링크(44건)는 **별개 장치다.** 단축링크 글의 다수는 저장 명령 없이 도구·레포
+> 링크만 댓글로 뺀 경우다. 둘을 합산해 부풀리지 말 것.
+
+**핵심 트레이드오프**
+- **자료를 본문에 주면 좋아요·리포스트, 댓글로 잠그면 댓글이 터진다.** 둘은 같은 글에서 잘 안 일어난다.
+- **외부 URL을 본문에 직접 넣으면 도달이 깎인다.** 흥행글은 링크를 "댓글에 남기겠습니다"로 빼거나
+  `lnkd.in`으로 처리한다.
+
+**스텔스 클로징** *(Copywriting Secrets)*: 본문에서 가치를 다 주지 말고, 먼저 진짜 인사이트를 준 뒤
+"참고로 ___"로 톤을 바꾸지 않은 채 부드럽게 CTA(댓글·팔로우·링크)로 넘긴다. 광고처럼 결이 달라지면
+즉시 들킨다. **마지막 줄은 댓글을 부르는 질문으로** 닫는다(LinkedIn은 초기 참여로 도달을 늘린다).
+
+**진정성 하드 경계 (넘으면 신뢰 붕괴)**
+1. **인증 없는 수익/성과 자랑** ("월 N천만원" + 스크린샷 0) — 한국 청중이 가장 빠르게 간파한다.
+   코호트 안에 이를 저격하는 글이 좋아요를 모은다.
+2. **과도한 강제 게이팅** — 코호트의 게이트 글은 모두 **'1촌+댓글' 2단계**이며, 한 글은 오히려
+   "팔로우로는 메시지가 안 가요"라며 팔로우를 명시적으로 배제한다. 2단계까지가 표준이고 그 이상은
+   피로감으로 좋아요가 깎인다.
+3. **가짜 비밀·가짜 마감** — 진짜 기밀이 아닌데 기밀인 척하면 들통난다. 반복하면 늑대소년 효과.
+4. **"키워드 놀이" 반복** — 같은 계정이 게이트 글로 피드를 도배하면 동종 전문가 신뢰가 깎인다.
+
+---
+
+## 7. 신뢰·권위 프레이밍
+
+가장 강하게 작동하는 신뢰 장치는 추상적 권위가 아니라 **구체적 검증 증거**다. 자격증명은 도달을
+열지만, 실제 폭발은 "직접 돌려본 수치 / 물증 / 솔직한 실패 고백"이 본문에 깔릴 때 일어난다.
+
+| 프레이밍 | 끌어내는 지표 | 실행 규칙 | 검증된 예 |
+|---|---|---|---|
+| **첫 줄 자격증명 앵커** | 좋아요(도달) | `저는 {회사/기관} 출신 {직함}입니다` — 추상어("전문가") 금지, **검증 가능한 고유명사만** | 전 직장 명시 오프너 |
+| **직접 돌려본 정량 수치** | **리포스트 강함** | 주장마다 본인 측정 숫자. 남의 데이터면 "직접 재현해봤다"를 덧붙여라 | `71.5배`·`92%`·`데이터 10,000건` |
+| **약자→전환 서사** | **댓글 압도**(게이트 결합 시) | 출발점을 의도적으로 낮춰라("코딩 0"·"비개발자"·"60대") + 짧은 전환 + 구체 결과물 | "GPT도 겨우 쓰는 60대 사장님"(댓글 797) |
+| **취약성·실패 고백 오프너** | 좋아요+댓글(공감) | 막연한 "힘들었다" 금지. 검증 가능한 디테일(피해 규모·정확한 발언) | "나는 독선적인 사람이었다" |
+| **원본 증거물 직접 제시** | 리포스트+좋아요 | 스크린샷·PR·로그·산출물 수치를 직접 나열. 추상 설명보다 결과물 1개가 강하다 | 유출 소스 분석 + 발견 캡처 |
+
+**페이로드는 '의미'로 착지시킨다** *(Copywriting Secrets)*: 불릿은 `[기능]라서 [혜택]할 수 있습니다.
+즉, [정서적 의미]입니다`로. 사람이 사는 이유는 돈·시간 절약만이 아니라 사랑·지위·인정·공포까지다 —
+최소 한 개의 정서 이유를 결부한다.
+
+**신뢰의 반직관 (코호트가 직접 증명)**
+- **"누구인가(자격)"보다 "무엇을 증명했는가(실측 결과물)"가 더 잘 전파된다.** 순수 자격증명 글
+  (퇴사·이직 인사)은 좋아요는 받아도 **리포스트가 0에 수렴한다**(예: 좋아요 408·리포스트 0,
+  좋아요 200·리포스트 0). reaction_score 천장이 낮아지는 핵심 신호다.
+- **권위를 내려놓는 글이 더 안전하게 터진다.** "60대 사장님"·"비개발자" 같은 약자 프레이밍이 댓글을
+  좋아요보다 많이 끌어낸다.
+- **자격증명만 있고 증거가 없으면 역공당한다.** "인증 하나도 없다"는 저격 글이 코호트 안에서
+  좋아요를 모은다.
+
+---
+
+## 8. 터지는 주제·앵글
+
+**주제 차별화는 거의 무의미하다.** 코호트 140건 중 **113건(80%)**이 단일 메가토픽 "AI 코딩·에이전트
+운영"에 몰려 있는데도 다 흥행했다. 한국어 LinkedIn 바이럴은 "새 주제 발굴"이 아니라 **"포화 주제에
+어떤 앵글을 얹느냐"의 게임**이다. (나머지 27건은 비-AI 글이다.)
+
+같은 인사이트도 **'누가 읽느냐'에 따라 형식을 바꾼다** *(왜의 쓸모)*: 청자가 넓고 멀면 인과를 단순화한
+'이야기'로, 권위가 필요하면 1~2문장만 숫자·규정·메커니즘을 섞는다. 청자를 전문가로 만들려 하지 말고
+메시지를 청자가 아는 형식으로 번역하라.
+
+| 앵글 | 끌어내는 지표 | 핵심 |
+|---|---|---|
+| **메가토픽 운영 노하우 구조화** | 리포스트(저장) | 도달 베이스라인. "소개"가 아니라 번호+근거+코드/경로로. 앵글 없이 신규 도구 소개만 반복하면 묻힌다 |
+| **무료 자료 배포형(게이트)** | 댓글 아웃라이어 독점 | §6 게이트 설계. 접근성 증거("비개발자도 했다")를 제목에 박으면 전환↑ |
+| **1인 레버리지 서사** ("AI가 팀/회사를 대체") | 전방위 | 추상적 "생산성"이 아니라 분 단위 타임스탬프 + 고유명사로 장면 재연 + 실물 증거 필수 |
+| **통념 역류** ("도구가 아니라 X가 본질"/"전담팀은 실수였다") | 좋아요·댓글(토론) | 메가토픽에 올라타되 방향만 반대로. 본인 실패담·실측이 근거여야 함 |
+| **시의성 핫이슈 즉시 해설** (유출·신기능·모델 출시) | 리포스트(전파) | 같은 노하우도 "방금 일어난 일"에 묶으면 전파가 붙는다. 24~48시간 내 발행 |
+| **산업·시사 심층 분석 롱폼** (공급망 보안 사고, 배민 매각 등) | 리포스트·저장(레퍼런스) | AI 주제가 아니어도 401~700단어 해부형으로 흥행. "사건 정리 + 1차 해석"이 핵심 |
+| **비-AI 정서 글** (리더십·커리어·관전평) | 좋아요 압도, 리포스트 0~한자리 | AI 피로 피드의 휴식처. 1문장 도발 명제로 열고 경험으로 채움. 단 reaction_score 천장은 낮음 |
+
+**앵글 선택 반직관**
+- **메가토픽을 "부정"하는 글도 잘 먹힌다.** "전담팀을 만들었습니다. 실수였습니다"(좋아요 861) 같은
+  역류가 좋아요를 모은다. 올라타기와 반박이 같은 토픽에서 공존하며 둘 다 통한다 — **단, 둘 다 본인
+  증거가 있어야 한다.**
+- **AI 코딩만 메가토픽인 게 아니다.** 비-AI 산업 분석 롱폼(공급망 보안 사고, 딜리버리히어로의 배민
+  매각 분석)이 별도 군집으로 흥행하고, 정서·리더십 글 27건도 좋아요 위주로 상위에 든다.
+- **시의성은 유통기한이 짧다.** 단순 뉴스 요약은 리포스트만 나오고 좋아요·댓글은 약하다 — "나만의
+  관점·1차 검증"이 없으면 동일 속보에 묻힌다.
+
+---
+
+## 9. 반복 흥행 운영자 패턴 (누가 또 터뜨리는가)
+
+바이럴은 1회성 운이 아니다. 코호트 140건을 소수 운영자가 반복 점유한다 — **상위 5명이 코호트의 약
+26%(37건)**를 차지한다.
+
+| 운영자 아키타입 | 코호트 진입 수 | 반복 패턴 |
+|---|---:|---|
+| 1위 운영자 | 11 | 메가토픽 번호 가이드 + 저장 명령 양산 |
+| 2위 운영자 | 9 | 도구 큐레이션·노하우 구조화 반복 |
+| 공동 3위 ×2 | 각 6 | 일관된 포맷·시각 마커로 시리즈화 |
+| 5위 운영자 | 5 | 권위 앵커 + 실측 수치 결합 |
+
+(이하 4건·3건·2건대 운영자가 길게 이어진다.)
+
+- **포맷을 한 번 찾으면 시리즈화한다.** 상위 운영자는 매번 새 포맷을 발명하지 않고, 통한 골격
+  (번호 가이드+저장, 전후 시간 절감+게이트)을 변주해 반복 발행한다. *(Ship 30: 먹힌 주제를 두 배로
+  늘려 카테고리로 소유하라.)*
+- **단, 같은 포맷을 같은 계정이 도배하면 패턴이 읽혀 신선도·도달이 떨어진다**(§6 "키워드 놀이" 참조).
+  반복하되 소재·앵글은 갈아끼운다.
+- **반복 점유 = 누적 신뢰의 결과다.** 매 글에 검증 가능한 실체를 둔 운영자만 반복 상위에 든다.
+  인증 없는 과장은 1회는 터져도 반복 진입을 못 한다.
+
+---
+
+## 10. 포맷 관습 & 안티패턴
+
+### 10-1. 따라야 할 포맷 관습 (코호트 실측 빈도)
+
+| 관습 | 코호트 빈도 | 효과 | 사용 한계 |
+|---|---:|---|---|
+| **대괄호 제목** `[(자료 공유) ...]` | 첫 줄 대괄호 8건 | 0.5초 안에 "배포/공지 글" 인식 | 에세이에 붙이면 "또 자료 낚시"로 신뢰 하락 |
+| **비밀누설 이모지** 🤫🫢👀 | 4건 | 호기심 → 댓글(댓글 551 vs 리포스트 1 극단 편향) | 진짜 내부자만 안전. 출처(회사·기간) 구체적으로 |
+| **방향 화살표** 👉👇 | 9건 | 스캔 속도↑ → 리포스트 | 한 글에 2~3개까지. 남발하면 광고 배너 |
+| **줄머리 화살표** `→` | 36건 | 항목 테이크어웨이 압축 | 번호 가이드와 세트일 때 효과 |
+| **번호 마커** ①②③/1️⃣/❶❷❸ | 25건 | 저장·보관 | 12개 넘기면 이탈. 각 항목에 구체값 없으면 일반론 나열 |
+
+### 10-2. 안티패턴 (하지 말 것)
+
+> **이 청중에게 가장 강력한 적은 "AI 슬롭·광고 톤" 그 자체다.** 상위 글 일부는 클리셰를 대놓고
+> 조롱하거나("키워드 놀이가 또 시작되었구나") 안티패턴을 역이용한다.
+
+| 안티패턴 | 왜 위험한가 |
+|---|---|
+| **AI 슬롭 시각/문체** (보라색 그라데이션·둥근 카드·이모지 떡칠·과장 헤드라인) | "AI로 만든 티"가 이 코호트 최대 안티패턴. 슬롭 비판 글이 슬롭 톤이면 즉시 위선 |
+| **인증 없는 수익/희소성** ("월 N천만원"·"오늘 마감") | 단기 댓글은 끌지만 코호트 내 저격 대상. 누적 신뢰 붕괴 |
+| **마커만 화려한 빈 리스트** | 각 항목에 실측·명령어 없으면 "AI한테 시킨 리스트" 티. 저장은 돼도 댓글 0 |
+| **구조 없는 일반론** (길이 무관) | 같은 151~250단어라도 번호·증거 없이 벙벙하면 모집단 하위. 길이가 아니라 구조·증거 부재가 문제 |
+| **본문에 외부 링크 직접 삽입** | 도달 페널티. 댓글로 빼거나 단축링크로 |
+| **연기한 취약성/날것** (억지 욕설·과장 좌절·겸손 가장한 자랑) | 꾸민 서사는 독자가 알아챈다. 진짜 겪은 사람만, 구체 디테일과 함께일 때만 작동 |
+| **채팅 슬랭 그대로 박기** ("ㄱㄱ" 직역) | 슬랭은 의도 신호로만. 출력은 준비된 친근-정중 구어체로 |
+| **같은 포맷 무한 도배** | 같은 계정이 반복하면 패턴이 읽혀 신선도·도달 하락 |
+
+---
+
+## 11. 글쓰기 전 점검 체크리스트
+
+**통과 조건 (모두 YES여야 발행)**
+- [ ] **1차 목표를 정했다** — 좋아요·리포스트(공개형)용인가, 댓글·리드(게이트형)용인가? 설계가 일관되는가?
+- [ ] **첫 줄이 8유형 중 하나로 즉시 식별되는가?** 3줄 안에 유형이 안 잡히면 다시 써라.
+- [ ] **AND→BUT→THEREFORE 운동이 있는가?** '그리고'를 '하지만/그래서'로 더 바꿀 수 있나?
+- [ ] **한 줄 = 한 문단 리듬으로 쪼갰는가?** 3문장 붙은 문단이 없는가?
+- [ ] **사람(주인공) 1명이 있고, 결핍/약점이 먼저 나오는가?** (서사 글일 때)
+- [ ] **길이가 담을 사실의 밀도와 맞는가?** 구조·증거 없이 분량만 채우지 않았는가?
+- [ ] **주장마다 증거가 붙는가?** (실측 수치/물증/구체 디테일) 자격증명만 던지지 않았는가?
+- [ ] **기능이 아니라 '의미'로 착지하고, 정서 이유가 최소 하나 있는가?**
+- [ ] **앵글이 있는가?** 포화 주제라면 역류·시의성·서사·산업분석 중 하나를 얹었는가?
+- [ ] **외부 링크를 댓글/단축링크로 뺐는가?** CTA가 1차 목표와 일치하는가? 마지막 줄이 댓글을 부르는가?
+
+**하드 실패 (하나라도 YES면 발행 금지)**
+- [ ] 인증 없는 수익/성과 자랑 → **삭제 또는 증거 첨부**
+- [ ] 게이팅이 '1촌+댓글' 2단계를 넘음 → **2단계로 줄여라**
+- [ ] 가짜 비밀·가짜 마감 → **연출 제거**
+- [ ] AI 슬롭 톤(이모지 떡칠·과장 헤드라인) → **제거**
+- [ ] 취약성·날것을 연기함(실제 경험 아님) → **쓰지 마라**
+- [ ] 정보 나열만 있고 BUT(모순)이 없음 → **긴장을 넣어라**
+
+---
+
+## 12. 재사용 템플릿 (범용)
+
+> 플레이스홀더 `{...}`를 채워 쓴다. 모든 템플릿은 한 줄 = 한 문단 리듬을 전제로 한다. 수치는 레인지로,
+> 소재는 플레이스홀더로 두어 특정 글에 묶이지 않게 했다.
+
+### 템플릿 A — 번호 가이드 (좋아요·리포스트 / §5 황금 교차로)
+```
+{10명 중 9명이 / 상위 0.3%는} {흔한 실수 또는 지위 행동}.
+
+제가 {N}가지로 정리했습니다.
+저장해두고 오늘부터 하나씩 써보세요.
+
+① {명령형 소제목}
+   {2~4문장 설명 + 구체값/명령어/반례}
+   → {한 줄 테이크어웨이}
+
+② {명령형 소제목}
+   ...
+(N개 반복, N=5~12)
+
+→ {전체를 관통하는 보편 결론 한 줄}
+(외부 링크는 댓글에)
+```
+**노린 지표:** 리포스트. **하드 조건:** 각 항목에 실측/구체값 1개 이상. 도입에 짧은 개인 스토리를
+얹으면 체류가 올라간다.
+
+### 템플릿 B — 자료배포 게이트 (댓글·리드 / PAS)
+```
+[(무료 공유) {구체적 대상}도 따라하는 {결과물}]
+
+{이 자료를 만든 자격/맥락 1줄 — 검증 가능한 고유명사}
+
+이 안에 담긴 것:
+- {목차/스펙 1}
+- {목차/스펙 2}
+- {목차/스펙 3}
+
+{접근성 증거 — "비개발자도", "N시간 만에"}
+
+1촌 신청 후 댓글에 "{단일 키워드}" 남겨주시면 DM으로 보내드리겠습니다.
+({마감/한정 1줄 — 진짜일 때만})
+```
+**노린 지표:** 댓글·팔로워. **하드 조건:** 자료 실체가 목차만큼 충실할 것. 게이팅은 '1촌+댓글' 2단계까지만.
+
+### 템플릿 C — 권위+도발 (전방위 / 1인 레버리지·주장형)
+```
+저는 {검증 가능한 자격/소속} 출신입니다.
+
+{통념과 충돌하는 큰 주장}.
+{짧은 도발 한마디 — 선택}
+
+근데 {반증할 구체 장면/증거}를 보면 생각이 바뀔 겁니다.
+
+{분 단위 타임스탬프 또는 고유명사로 장면 재연}
+{물증 나열 — 스크린샷·로그·산출물 수치}
+
+{왜 이게 가능한지 원리 1줄}
+```
+**노린 지표:** 좋아요+리포스트(+게이트 추가 시 댓글). **하드 조건:** 권위는 검증 가능한 고유명사로,
+도발은 반드시 본문 증거와 세트. 특정 글의 어투를 베끼지 말 것.
+
+### 템플릿 D — 전후 시간 절감 (댓글/저장 / BAB·PAS)
+```
+예전엔 {작업}에 {X분/X원} 썼습니다.
+{과거의 고통 1줄 — 생생하게}
+
+지금은 {Y분/Y원}.
+
+{새 방식 한 줄}
+
+{핵심 결과 숫자를 단독 줄로}
+
+(방법은 → 공개형: 본문에 다 공개 / 게이트형: "댓글 달면 DM")
+```
+**노린 지표:** 공개 분기면 리포스트, 게이트 분기면 댓글. **하드 조건:** 배수 대신 실제 단위(분·원)로.
+댓글 아웃라이어 1순위 포맷이라 게이트와 결합 시 효과 큼.
+
+### 템플릿 E — 취약 서사 (좋아요·댓글 공감 / 스토리 황금률·ABT)
+```
+{감정/실패 한 문장만}. (반말 가능)
+
+{험난한 목표}를 세웠지만 {장애물 1~2개}에 막혔다.
+
+그때 {극복 행동}을 했고, {반전 결과}가 됐다.
+
+다들 {예상한 것}을 떠올리지만, 진짜는 {예상 못 한 한 끗}이었다.
+
+{누구나 가져갈 보편 교훈 한 줄}
+```
+**노린 지표:** 좋아요+댓글. **하드 조건:** 실제 경험만. CTA·영업 붙이면 톤 붕괴. 끝에 게이팅 금지.
+
+### 템플릿 F — 시의성/산업 분석 (리포스트 / 미스터리·ABT)
+```
+{미쳤다 / 드디어 / (담담히)} {주어}가 {했다}. (감탄사 1개만)
+
+왜 중요한가:
+{1줄}
+
+내가 직접 본 것:
+{1차 검증/해석 — 수치·타임라인·물증}
+
+{전망 또는 내 작업에 적용한 법 1줄}
+(원문/레포 링크는 댓글에)
+```
+**노린 지표:** 리포스트. **하드 조건:** 24~48시간 내 발행 + "직접 봤다/써봤다" 1차 해석으로 단순
+전달과 차별화. 산업·시사 롱폼이면 401~700단어로 끝까지 해부하되 한 줄 리듬 유지.
+
+---
+
+## 13. 말투 레퍼런스 (퓨샷)
+
+초안을 쓰기 전 `references/few-shot-examples.md`를 읽고 **쓰려는 글과 같은 아키타입 예시 2~3개의
+말투에 맞춘다.** §1~12가 형식(뼈대)이라면, 이 파일은 **레지스터(말투·단어·호흡)**를 잡아주는 실제
+흥행글 15편이다(권위+도발·전후 비교·번호 가이드·자료배포·통념 역류·뉴스·사건 등 아키타입별).
+
+전 예시 공통 말투 — 새 글이 이 결과 같은지 자가 점검:
+
+- **습니다 뼈대 + `거든요`·`근데`·`솔직히` 구어체.** 균일한 에세이체·번역투 금지.
+- **격언·대구 만들기 금지.** "A와 B는 다릅니다" 같은 균형 잡힌 명언체가 가장 흔한 AI 티다. 명언
+  대신 구체 사실로 착지한다.
+- **추상어 대신 구체 고유명사·숫자.** 도구명·회사·기간·개수를 박는다("좋은 글" X → "1,568개" O).
+- **한 줄 = 한 문단**, 강조는 스타카토 단정문으로(`아니다.` `실수였습니다.`).
+- **소재·문장은 베끼지 말고 말투만 가져온다.** 예시는 레지스터 교재이지 복붙 대상이 아니다.
+
+---
+
+## 부록: 데이터·출처
+
+**실측 데이터 (2026-06-15 기준)**
+- Skim DB: `/Users/seungwonan/Dev/3-tool/skim/data/skim.db` — `posts` 테이블의 LinkedIn 한국어 행
+- 모집단 2,028건(engagement 보유·중복 제거), 분석 코호트 reaction_score 상위 140건
+- 모든 빈도·지표는 이 코호트의 실측값. 유형별 라벨 빈도가 없는 항목엔 수치를 붙이지 않았다.
+
+**스토리텔링 프레임워크 출처 (본문 괄호 표기)**
+- *Copywriting Secrets* (짐 에드워즈) — 헤드라인 템플릿, 사람이 사는 이유, PAS/BAB, 후크 포인트,
+  기능→의미, 스텔스 클로징
+- *무조건 팔리는 스토리 마케팅 기술 100* (가와카미 데쓰야) — 스토리 황금률(결핍 주인공-목표-장애물)
+- *Don't Be Such a Scientist* (Randy Olson) — ABT(And/But/Therefore) 서사 척추
+- *왜의 쓸모* — "왜"의 설득력, 청자 관계에 따른 형식 번역, 미스터리(결과→원인) 구성
+- *Ship 30 for 30* (한국어) — 아토믹 에세이, 1/3/1 리듬, 데킬라 테스트(차별화), 황금 교차로
+- *구독자와 리드 확보를 위한 SNS 글쓰기* — 목표 기반 운영, 독자 키워드로 시작, Follower Fit
+- *조회수 떡상 썸네일·제목 공식 19가지* — 클릭 훅 3단(시선 집중→호기심 증폭→가치 약속)
+
+> 원문 글을 그대로 베끼지 않는다. 패턴·구조·리듬만 가져오고, 발행 전 사실은 검증한다.
