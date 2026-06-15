@@ -103,7 +103,7 @@ linkedin-cli auth login
 linkedin-cli auth-status
 ```
 
-`auth login`은 로그인된 브라우저(Chrome·Chromium·Brave·Edge·Firefox)에서 쿠키를 추출해 private file(`~/.config/linkedin/cookies.env`, 권한 `600`)에 저장하고 세션을 검증합니다. 자동 추출이 실패하면 DevTools로 직접 복사하는 단계를 출력합니다 — [읽기 인증](#읽기-인증) 참고.
+`auth login`은 로그인된 브라우저(Chrome·Chromium·Brave·Edge·Firefox)에서 쿠키를 추출해 private file(`~/.config/linkedin/cookies.env`, 권한 `600`)에 저장하고 세션을 검증합니다. 자동 추출이 실패하면 DevTools로 직접 복사하는 단계를 출력합니다 — [읽기 인증](#읽기-인증) 참고. `read feed`는 쿠키를 Python HTTP 클라이언트에 재사용하지 않고, 저장된 Playwright browser state 안에서 GraphQL fetch를 실행합니다.
 
 자동 추출은 성공했지만 LinkedIn Voyager가 self-redirect/authwall로 세션을 거부하면, 새 웹 세션을 직접 캡처합니다.
 
@@ -114,7 +114,7 @@ linkedin-cli auth login --via-browser --browser firefox
 
 Firefox를 선택하려면 Playwright Firefox 빌드가 필요합니다: `uv run playwright install firefox`.
 
-이 명령은 Playwright 브라우저 창을 열고 사용자가 직접 로그인/2FA/checkpoint를 통과한 뒤 전체 LinkedIn 쿠키 jar를 private file에 저장합니다. 쿠키 값은 출력하지 않습니다.
+이 명령은 Playwright 브라우저 창을 열고 사용자가 직접 로그인/2FA/checkpoint를 통과한 뒤 전체 LinkedIn 쿠키 jar와 browser state를 private file에 저장합니다. 쿠키 값은 출력하지 않습니다. `auth-status`는 direct HTTP 진단이므로 browser-context 기반 `read feed`와 결과가 다를 수 있습니다.
 
 공식 OAuth 권한을 mutation 없이 점검:
 

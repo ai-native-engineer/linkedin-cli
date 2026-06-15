@@ -85,6 +85,40 @@ def test_activity_url_preserves_urn_type() -> None:
     )
 
 
+def test_feed_uses_browser_context_fetch_path(monkeypatch) -> None:
+    client = object.__new__(LinkedInClient)
+    client.config = load_config()
+    client.config.rate_limit.request_delay = 0
+    seen = []
+
+    class FakeBrowser:
+        def get_feed_posts(self, count):
+            seen.append(("browser", count))
+            return [
+                {
+                    "entityUrn": "urn:li:activity:1",
+                    "commentary": {"text": "Post from browser fetch"},
+                    "author_name": "Jane Doe",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:1/",
+                }
+            ]
+
+    class RejectTransport:
+        def get_feed_posts(self, *, limit):
+            raise AssertionError("requests transport should not be used for feed")
+
+    client.browser = FakeBrowser()
+    client.transport = RejectTransport()
+    monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
+
+    posts = client.feed(limit=1)
+
+    assert seen == [("browser", 1)]
+    assert len(posts) == 1
+    assert posts[0].urn == "urn:li:activity:1"
+    assert posts[0].text == "Post from browser fetch"
+
+
 def test_react_requires_activity_urn() -> None:
     client = object.__new__(LinkedInClient)
 

@@ -14,6 +14,7 @@ from linkedin_cli.browser import _looks_auto_login_page
 from linkedin_cli.browser import _looks_logged_out
 from linkedin_cli.browser import _launch_browser_for
 from linkedin_cli.browser import _menu_contains_any
+from linkedin_cli.browser import _parse_feed_graphql_payload
 from linkedin_cli.browser import _poll_until_logged_in
 from linkedin_cli.browser import _save_action_labels
 from linkedin_cli.browser import _save_action_selectors
@@ -199,6 +200,99 @@ def test_poll_until_logged_in_times_out_while_logged_out(monkeypatch) -> None:
 
     assert _poll_until_logged_in(page, timeout=5.0) is False
     assert page.waits == [2000]  # polled once before the deadline elapsed
+
+
+def test_complete_remember_me_profile_selection_saves_state(monkeypatch, tmp_path) -> None:
+    state_path = tmp_path / "state.json"
+    monkeypatch.setenv("LINKEDIN_BROWSER_STATE", str(state_path))
+    events = []
+
+    class FakeProfileButton:
+        def wait_for(self, **kwargs):
+            events.append(("wait_for", kwargs["state"]))
+
+        def click(self, **_kwargs):
+            events.append(("click",))
+
+    class FakeLocator:
+        first = FakeProfileButton()
+
+    class FakePage:
+        url = "https://www.linkedin.com/uas/login"
+
+        def locator(self, selector):
+            assert selector in {"button.member-profile__details", "body"}
+            if selector == "body":
+                return SimpleNamespace(inner_text=lambda timeout=3000: "Feed")
+            return FakeLocator()
+
+        def wait_for_url(self, pattern, **_kwargs):
+            assert pattern == "**/feed/**"
+            self.url = "https://www.linkedin.com/feed/"
+
+        def wait_for_timeout(self, ms):
+            events.append(("wait", ms))
+
+    class FakeContext:
+        def storage_state(self, *, path):
+            Path(path).write_text('{"cookies": []}', encoding="utf-8")
+
+    subject = SimpleNamespace(config=SimpleNamespace(rate_limit=SimpleNamespace(timeout=20)))
+
+    assert LinkedInBrowserFallback._complete_remember_me_if_available(
+        subject,
+        FakePage(),
+        target_url="https://www.linkedin.com/feed/",
+        context=FakeContext(),
+    )
+    assert ("click",) in events
+    assert state_path.exists()
+    assert (state_path.stat().st_mode & 0o777) == 0o600
+
+
+def test_parse_feed_graphql_payload_returns_normalizable_posts() -> None:
+    payload = {
+        "included": [
+            {
+                "entityUrn": "urn:li:activity:7441619761081294848",
+                "commentary": {"text": {"text": "LinkedIn browser-context feed post"}},
+                "createdAt": 1710000000000,
+                "actor": {
+                    "entityUrn": "urn:li:fsd_profile:1",
+                    "name": {"text": "Jane Doe"},
+                    "subDescription": {"text": "AI Engineer"},
+                },
+                "*socialDetail": "urn:li:fsd_socialDetail:1",
+            },
+            {
+                "entityUrn": "urn:li:fsd_socialDetail:1",
+                "*totalSocialActivityCounts": "urn:li:fsd_counts:1",
+            },
+            {
+                "entityUrn": "urn:li:fsd_counts:1",
+                "numLikes": 7,
+                "numComments": 2,
+                "numShares": 1,
+            },
+        ]
+    }
+
+    posts = _parse_feed_graphql_payload(payload)
+
+    assert posts == [
+        {
+            "entityUrn": "urn:li:activity:7441619761081294848",
+            "url": "https://www.linkedin.com/feed/update/urn:li:activity:7441619761081294848/",
+            "commentary": {"text": "LinkedIn browser-context feed post"},
+            "author_name": "Jane Doe",
+            "headline": "AI Engineer",
+            "actor": payload["included"][0]["actor"],
+            "createdAt": "2024-03-09T16:00:00+00:00",
+            "reactionCount": 7,
+            "commentCount": 2,
+            "shareCount": 1,
+        }
+    ]
 
 
 def test_menu_contains_any_uses_exact_visible_menu_labels() -> None:

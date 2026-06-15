@@ -131,6 +131,43 @@ class LinkedInBrowserFallback:
                 raise BrowserActionError("LinkedIn saved posts page returned an unexpected payload.")
             return [post for post in posts if isinstance(post, dict)]
 
+    def get_feed_posts(self, count: int) -> list[dict[str, object]]:
+        target_count = max(count, 1)
+        posts: list[dict[str, object]] = []
+        seen: set[str] = set()
+        start = 0
+        batch_size = min(target_count, 20)
+
+        with self._open_page("https://www.linkedin.com/feed/") as page:
+            for _ in range(5):
+                if len(posts) >= target_count:
+                    break
+                payload = _fetch_feed_graphql(
+                    page,
+                    start=start,
+                    count=min(batch_size, target_count + 5),
+                )
+                batch = _parse_feed_graphql_payload(payload)
+                if not batch:
+                    break
+                added = 0
+                for post in batch:
+                    key = str(post.get("entityUrn") or post.get("url") or post.get("commentary") or "")
+                    if not key or key in seen:
+                        continue
+                    seen.add(key)
+                    posts.append(post)
+                    added += 1
+                    if len(posts) >= target_count:
+                        break
+                if added == 0:
+                    break
+                start += batch_size
+
+        if not posts:
+            raise BrowserActionError("LinkedIn browser feed did not return any posts.")
+        return posts[:target_count]
+
     def toggle_save(self, activity_identifier: str, should_save: bool) -> BrowserActionResult:
         with self._open_page(_activity_url(activity_identifier)) as page:
             self._click_first(
@@ -343,6 +380,9 @@ class LinkedInBrowserFallback:
         if not _looks_logged_out(page.url, body_text):
             return
 
+        if self._complete_remember_me_if_available(page, target_url=target_url, context=context):
+            return
+
         if self.config.browser.fallback_enabled:
             self._recover_login(page, target_url=target_url, context=context)
             return
@@ -416,6 +456,33 @@ class LinkedInBrowserFallback:
         state_path.parent.mkdir(parents=True, exist_ok=True)
         context.storage_state(path=str(state_path))
         _harden_state_permissions(state_path)
+
+    def _complete_remember_me_if_available(self, page, *, target_url: str, context) -> bool:
+        lowered_url = page.url.lower()
+        if "/uas/login" not in lowered_url and "/checkpoint/rm" not in lowered_url:
+            return False
+
+        timeout_ms = int(self.config.rate_limit.timeout * 1000)
+        profile_button = page.locator("button.member-profile__details").first
+        try:
+            profile_button.wait_for(state="visible", timeout=min(timeout_ms, 5000))
+            profile_button.click(timeout=min(timeout_ms, 5000))
+            try:
+                page.wait_for_url("**/feed/**", timeout=timeout_ms)
+            except Exception:
+                pass
+            page.wait_for_timeout(3000)
+        except Exception:
+            return False
+
+        if _looks_logged_out(page.url, _page_body_text(page)):
+            return False
+
+        state_path = _browser_state_path()
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        context.storage_state(path=str(state_path))
+        _harden_state_permissions(state_path)
+        return True
 
     def _complete_auto_login_if_available(self, page, *, target_url: str, context) -> bool:
         body_text = _page_body_text(page)
@@ -570,6 +637,7 @@ def capture_read_session(
 
     nav_timeout_ms = int(max(config.rate_limit.timeout, 30.0) * 1000)
     cookies: list[dict[str, object]] = []
+    state_path = _browser_state_path()
     with sync_playwright() as playwright:
         try:
             browser = _launch_browser_for(playwright, config, headless=headless)
@@ -592,6 +660,9 @@ def capture_read_session(
                     "Log in within the window, then re-run `auth login --via-browser`."
                 )
             cookies = context.cookies()
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            context.storage_state(path=str(state_path))
+            _harden_state_permissions(state_path)
         finally:
             context.close()
             browser.close()
@@ -615,6 +686,179 @@ def _poll_until_logged_in(page, *, timeout: float) -> bool:
     return not _looks_logged_out(page.url, _page_body_text(page))
 
 
+def _fetch_feed_graphql(page, *, start: int, count: int) -> dict[str, Any]:
+    url = (
+        "/voyager/api/graphql?includeWebMetadata=true"
+        f"&variables=(start:{start},count:{count},sortOrder:RELEVANCE)"
+        f"&queryId={_LINKEDIN_FEED_GRAPHQL_QUERY_ID}"
+    )
+    result = page.evaluate(
+        """async (url) => {
+          const csrfMatch = document.cookie.match(/JSESSIONID="?([^;"]+)/);
+          const csrf = csrfMatch ? csrfMatch[1] : '';
+          const response = await fetch(url, {
+            credentials: 'include',
+            headers: {
+              'Accept': 'application/vnd.linkedin.normalized+json+2.1',
+              'csrf-token': csrf,
+              'x-restli-protocol-version': '2.0.0',
+            },
+          });
+          if (!response.ok) {
+            return { error: response.status, url: response.url };
+          }
+          return await response.json();
+        }""",
+        url,
+    )
+    if not isinstance(result, dict):
+        raise BrowserActionError("LinkedIn browser feed returned an unexpected payload.")
+    if result.get("error"):
+        raise BrowserActionError(f"LinkedIn browser feed API returned HTTP {result['error']}.")
+    return result
+
+
+def _parse_feed_graphql_payload(payload: dict[str, Any]) -> list[dict[str, object]]:
+    included = payload.get("included")
+    if not isinstance(included, list):
+        return []
+    urn_index = {
+        item.get("entityUrn"): item
+        for item in included
+        if isinstance(item, dict) and item.get("entityUrn")
+    }
+    posts: list[dict[str, object]] = []
+    for item in included:
+        if not isinstance(item, dict):
+            continue
+        post = _extract_feed_graphql_post(item, urn_index)
+        if post is not None:
+            posts.append(post)
+    return posts
+
+
+def _extract_feed_graphql_post(
+    item: dict[str, Any],
+    urn_index: dict[str, dict[str, Any]],
+) -> dict[str, object] | None:
+    text = _extract_graphql_text(item.get("commentary"))
+    if len(text) < 10:
+        return None
+
+    entity_urn = str(item.get("entityUrn") or "")
+    activity_id = extract_activity_id(entity_urn)
+    url = f"https://www.linkedin.com/feed/update/urn:li:activity:{activity_id}/" if activity_id else ""
+    actor = item.get("actor") if isinstance(item.get("actor"), dict) else {}
+    likes, comments, shares = _resolve_feed_engagement(item, urn_index)
+
+    return {
+        "entityUrn": entity_urn,
+        "url": url,
+        "commentary": {"text": text},
+        "author_name": _extract_graphql_text(actor.get("name")),
+        "headline": _extract_graphql_text(actor.get("subDescription")),
+        "actor": actor,
+        "createdAt": _coerce_linkedin_timestamp(item.get("createdAt"))
+        or _parse_relative_timestamp(_extract_graphql_text(actor.get("subDescription"))),
+        "reactionCount": likes,
+        "commentCount": comments,
+        "shareCount": shares,
+    }
+
+
+def _extract_graphql_text(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw.strip()
+    if isinstance(raw, dict):
+        for key in ("text", "accessibilityText", "string", "title", "value"):
+            text = _extract_graphql_text(raw.get(key))
+            if text:
+                return text
+        for value in raw.values():
+            text = _extract_graphql_text(value)
+            if text:
+                return text
+    if isinstance(raw, list):
+        return " ".join(part for part in (_extract_graphql_text(item) for item in raw) if part).strip()
+    return str(raw).strip()
+
+
+def _resolve_feed_engagement(
+    item: dict[str, Any],
+    urn_index: dict[str, dict[str, Any]],
+) -> tuple[int, int, int]:
+    social_obj = urn_index.get(str(item.get("*socialDetail") or ""), {})
+    counts = urn_index.get(str(social_obj.get("*totalSocialActivityCounts") or ""), {})
+    return (
+        _safe_int(counts.get("numLikes")),
+        _safe_int(counts.get("numComments")),
+        _safe_int(counts.get("numShares")),
+    )
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _coerce_linkedin_timestamp(raw_value: Any) -> str:
+    if raw_value is None:
+        return ""
+    if isinstance(raw_value, dict):
+        for key in ("time", "timestamp", "value", "epochMillis", "epoch"):
+            parsed = _coerce_linkedin_timestamp(raw_value.get(key))
+            if parsed:
+                return parsed
+        return ""
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        if not stripped.isdigit():
+            return ""
+        raw_value = int(stripped)
+    if isinstance(raw_value, (int, float)):
+        seconds = raw_value / 1000 if raw_value > 10_000_000_000 else raw_value
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat(timespec="seconds")
+    return ""
+
+
+def _parse_relative_timestamp(raw_text: str) -> str:
+    if not raw_text:
+        return ""
+    text = raw_text.split("•", 1)[0].strip().lower().replace("ago", "").strip()
+    if not text:
+        return ""
+    parts = text.split()
+    if len(parts) == 1:
+        amount = "".join(ch for ch in text if ch.isdigit())
+        unit = text[len(amount):]
+    else:
+        amount, unit = parts[0], parts[1]
+    if not amount.isdigit():
+        return ""
+
+    number = int(amount)
+    units = (
+        ("seconds", ("s", "sec", "secs", "second", "seconds", "초")),
+        ("minutes", ("m", "min", "mins", "minute", "minutes", "분")),
+        ("hours", ("h", "hr", "hrs", "hour", "hours", "시간")),
+        ("days", ("d", "day", "days", "일")),
+        ("weeks", ("w", "week", "weeks", "주")),
+    )
+    for delta_key, aliases in units:
+        if unit in aliases:
+            delta = timedelta(**{delta_key: number})
+            return (datetime.now(timezone.utc) - delta).isoformat(timespec="seconds")
+    if unit in {"mo", "month", "months", "개월"}:
+        return (datetime.now(timezone.utc) - timedelta(days=number * 30)).isoformat(timespec="seconds")
+    if unit in {"y", "year", "years", "년"}:
+        return (datetime.now(timezone.utc) - timedelta(days=number * 365)).isoformat(timespec="seconds")
+    return ""
+
+
 def _locator_candidates(locator, *, limit: int = 12):
     try:
         count = locator.count()
@@ -629,7 +873,7 @@ def _browser_state_path() -> Path:
     raw = os.getenv(ENV_BROWSER_STATE)
     if raw:
         return Path(raw).expanduser()
-    return Path.home() / ".config" / "linkedin-cli" / "browser-state.json"
+    return Path(DEFAULT_BROWSER_STATE_FILE).expanduser()
 
 
 def _harden_state_permissions(state_path: Path) -> None:

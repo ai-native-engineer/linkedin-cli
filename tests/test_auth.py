@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from linkedin_cli.auth import _auth_session_from_playwright_cookies
+from linkedin_cli.auth import _load_from_browser_state
 
 
 def _fake_config(*, preferred: str = "chrome", proxy: str | None = None) -> SimpleNamespace:
@@ -65,3 +67,27 @@ def test_playwright_cookies_missing_required_returns_none() -> None:
     ]
 
     assert _auth_session_from_playwright_cookies(cookies, config=_fake_config()) is None
+
+
+def test_browser_state_file_builds_session(monkeypatch, tmp_path) -> None:
+    state_path = tmp_path / "browser-state.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "li_at", "value": "AAA", "domain": ".linkedin.com", "path": "/"},
+                    {"name": "JSESSIONID", "value": "ajax:123", "domain": ".linkedin.com", "path": "/"},
+                    {"name": "bcookie", "value": "v=2&xyz", "domain": ".linkedin.com", "path": "/"},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LINKEDIN_BROWSER_STATE", str(state_path))
+
+    session = _load_from_browser_state(config=_fake_config(preferred="chrome"))
+
+    assert session is not None
+    assert session.source == "browser-state"
+    assert session.cookie_count == 3
+    assert session.cookie_jar.get("JSESSIONID") == '"ajax:123"'

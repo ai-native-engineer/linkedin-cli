@@ -66,7 +66,7 @@ class LinkedInClient:
         count = self._resolve_limit(limit)
         return self._retry(
             "feed",
-            lambda: self._normalize_posts(self.transport.get_feed_posts(limit=count)),
+            lambda: self._normalize_posts(self.browser.get_feed_posts(count)),
         )
 
     def get_saved_posts(self, limit: Optional[int] = None) -> list[Post]:

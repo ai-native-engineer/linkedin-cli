@@ -47,10 +47,10 @@ If automatic capture finds cookies but LinkedIn rejects the session, capture a f
 ```bash
 linkedin-cli auth login --via-browser --browser chrome
 linkedin-cli auth login --via-browser --browser firefox
-linkedin-cli auth-status
 ```
 
 Firefox requires the Playwright Firefox build first (`playwright install firefox`).
+`read feed` uses the saved Playwright browser state and GraphQL fetch; `auth-status` still probes the direct HTTP transport.
 
 Clone path (development):
 

@@ -690,6 +690,11 @@ def auth_login(
         )
     )
 
+    if via_browser:
+        # Avoid an immediate extra Voyager probe after manual browser login. The user can
+        # run auth-status explicitly when they want live validation.
+        return
+
     try:
         payload = collect_auth_diagnostics(config)
     except Exception as exc:

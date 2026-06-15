@@ -61,7 +61,7 @@ uv run linkedin-cli auth login --via-browser --browser firefox
 
 Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
 
-This lets the user complete login/2FA/checkpoints in the window, then stores the full LinkedIn cookie jar privately without printing values.
+This lets the user complete login/2FA/checkpoints in the window, then stores the full LinkedIn cookie jar and Playwright browser state privately without printing values. `read feed` uses that browser state for GraphQL fetch; `auth-status` still probes the direct HTTP transport.
 
 The command writes `~/.config/linkedin/cookies.env` with `600` permissions and never prints cookie values. Override the path only when needed:
 

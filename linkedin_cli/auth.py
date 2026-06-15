@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import shlex
@@ -15,8 +16,10 @@ from requests.cookies import RequestsCookieJar
 
 from .config import AppConfig
 from .constants import COOKIE_REQUIRED_NAMES
+from .constants import DEFAULT_BROWSER_STATE_FILE
 from .constants import DEFAULT_COOKIE_FILE
 from .constants import ENV_BROWSER
+from .constants import ENV_BROWSER_STATE
 from .constants import ENV_COOKIE_FILE
 from .constants import ENV_COOKIE_HEADER
 from .constants import ENV_JSESSIONID
@@ -100,6 +103,10 @@ def resolve_auth_session(config: AppConfig) -> AuthSession:
     file_session = _load_from_cookie_file(config)
     if file_session is not None:
         return file_session
+
+    browser_state_session = _load_from_browser_state(config)
+    if browser_state_session is not None:
+        return browser_state_session
 
     browser_session = _load_from_browser(config)
     if browser_session is not None:
@@ -390,6 +397,26 @@ def _load_from_cookie_file(config: AppConfig) -> AuthSession | None:
     return _auth_session_from_cookie_header(raw_header, source="cookie-file", config=config)
 
 
+def _load_from_browser_state(config: AppConfig) -> AuthSession | None:
+    path = _resolve_browser_state_path()
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    cookies = payload.get("cookies")
+    if not isinstance(cookies, list):
+        return None
+    return _auth_session_from_playwright_cookies(
+        [cookie for cookie in cookies if isinstance(cookie, dict)],
+        config=config,
+        source="browser-state",
+    )
+
+
 def _auth_session_from_cookie_header(
     raw_header: str,
     *,
@@ -451,6 +478,13 @@ def _resolve_cookie_file_path() -> tuple[Path, bool]:
     if raw_path:
         return Path(raw_path).expanduser(), True
     return default_cookie_file_path(), False
+
+
+def _resolve_browser_state_path() -> Path:
+    raw_path = os.getenv(ENV_BROWSER_STATE, "").strip()
+    if raw_path:
+        return Path(raw_path).expanduser()
+    return Path(DEFAULT_BROWSER_STATE_FILE).expanduser()
 
 
 def _read_cookie_header_file(path: Path) -> str:

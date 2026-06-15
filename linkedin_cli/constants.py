@@ -27,6 +27,7 @@ DEFAULT_MAX_RETRIES = 3
 DEFAULT_WRITE_DELAY_MIN = 1.5
 DEFAULT_WRITE_DELAY_MAX = 4.0
 DEFAULT_COOKIE_FILE = "~/.config/linkedin/cookies.env"
+DEFAULT_BROWSER_STATE_FILE = "~/.config/linkedin-cli/browser-state.json"
 
 SUPPORTED_BROWSERS = (
     "chrome",
