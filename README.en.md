@@ -78,6 +78,8 @@ cd linkedin-cli
 uv sync --extra dev
 ```
 
+From a clone, prefix commands with `uv run` (e.g. `uv run linkedin-cli --help`), or run `uv tool install .` to put `linkedin-cli` on PATH and use the examples below as-is.
+
 Install Playwright only if you need browser fallback behavior:
 
 ```bash
@@ -92,12 +94,14 @@ Check the CLI:
 linkedin-cli --help
 ```
 
-Read commands need a LinkedIn web session. The most reliable option is a full Cookie header copied from your logged-in browser and saved to a private cookie file. Run the command below, paste the header, then press `Ctrl-D` to finish stdin.
+Read commands need a LinkedIn web session. The easiest path is to capture cookies automatically from a logged-in browser.
 
 ```bash
-linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth login
 linkedin-cli auth-status
 ```
+
+`auth login` extracts cookies from a logged-in browser (Chrome, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication).
 
 Check official OAuth permissions without mutating LinkedIn:
 
@@ -328,12 +332,28 @@ Resolution order:
 3. `LINKEDIN_COOKIE_FILE` or the default `~/.config/linkedin/cookies.env`
 4. Browser cookie extraction from Chrome, Chromium, Brave, Edge, or Firefox
 
-Recommended: save the full Cookie header to a private file. The command does not print cookie values and sets the file mode to `600`.
+**Recommended: capture automatically with `auth login`.** It extracts cookies from a logged-in browser, saves them to a private file (mode `600`), and verifies the session. Cookie values are never printed.
 
 ```bash
-linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth login
 linkedin-cli auth-status
 ```
+
+If automatic extraction fails (on macOS, Chrome/Brave/Edge prompt for Keychain access — `--browser firefox` is the most reliable), capture the cookie manually:
+
+**Manual capture (DevTools):**
+
+1. Open https://www.linkedin.com in your browser and confirm you are logged in.
+2. Open DevTools (`Option+Command+I` on macOS, or `F12`).
+3. **Application** tab → **Storage** → **Cookies** → `https://www.linkedin.com`.
+4. Copy the values of `li_at` and `JSESSIONID` (`JSESSIONID` looks like `"ajax:..."` — copy it including the quotes).
+5. Build one line: `li_at=<value>; JSESSIONID=<value>`
+6. Save it: run `linkedin-cli auth cookie-file --from-stdin`, paste the line, press `Return`, then `Ctrl-D`.
+7. Verify: `linkedin-cli auth-status`
+
+Alternatively, copy the entire `cookie:` request header from a `www.linkedin.com` request in the DevTools **Network** tab and paste that (the fuller cookie jar LinkedIn sometimes needs).
+
+These values are equivalent to your LinkedIn password — never paste them into chat, commit them, or share them.
 
 One-shot env option:
 
@@ -481,8 +501,7 @@ print(delete_result.deleted_at)
 
 ## Skills
 
-This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/` and `.claude/skills/` are symlinks that point at it.
-Plugin installs use [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json) metadata and the same skill. After install, run `$linkedin-cli`; read auth should go through `auth cookie-file --from-stdin` → `auth-status`.
+This repository ships a single project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill that covers setup, auth, read/write workflows, and command selection. Its source of truth is [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md), and `skills/`, `.claude/skills/`, and `.codex/skills/` are project-local symlinks that point at it. The same skill also installs as a Claude plugin ([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). The plugin ships only the skill, so when the skill runs and `linkedin-cli` is missing, [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh) installs `agent-linkedin` for you; then `auth login` → `auth-status` confirms read auth.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — first-time setup and OAuth/cookie auth

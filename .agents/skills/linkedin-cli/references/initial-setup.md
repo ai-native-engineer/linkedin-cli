@@ -2,9 +2,9 @@
 
 Use this when `linkedin-cli` is not installed, OAuth is missing, or the user is setting up a new machine.
 
-## 1. Enter The Project
+## 1. Enter The Project (clone path)
 
-Work from the repository root:
+If you cloned the repo, work from its root. Skill/plugin users without a clone can skip to step 2.
 
 ```bash
 cd linkedin-cli
@@ -12,14 +12,23 @@ cd linkedin-cli
 
 This directory holds the LinkedIn CLI and its project-local skills.
 
-## 2. Install Dependencies
+## 2. Install The CLI
+
+**From a clone (development):** install dependencies and run via `uv run`.
 
 ```bash
 uv sync --extra dev
 uv run linkedin-cli --help
 ```
 
-Browser fallback flows use Playwright. If a command asks for a browser binary, install it from this directory:
+**As a global command (skill/plugin users):** when `command -v linkedin-cli` is empty, the skill installs the CLI for you. You can also run the installer directly — it is idempotent and never uses sudo:
+
+```bash
+bash .agents/skills/linkedin-cli/scripts/ensure-cli.sh
+linkedin-cli --help
+```
+
+The PyPI package is `agent-linkedin`; it provides the `linkedin-cli` command. Browser fallback flows use Playwright; install it only when a command asks for a browser binary:
 
 ```bash
 uv run playwright install chromium

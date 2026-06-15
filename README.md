@@ -78,6 +78,8 @@ cd linkedin-cli
 uv sync --extra dev
 ```
 
+소스에서 실행할 때는 명령 앞에 `uv run`을 붙입니다(예: `uv run linkedin-cli --help`). `uv tool install .`로 전역 설치하면 아래 예시처럼 `linkedin-cli`를 그대로 쓸 수 있습니다.
+
 브라우저 fallback이 필요할 때만 Playwright를 설치합니다.
 
 ```bash
@@ -92,12 +94,14 @@ CLI 확인:
 linkedin-cli --help
 ```
 
-읽기 명령은 LinkedIn 웹 세션이 필요합니다. 가장 안정적인 방식은 로그인된 브라우저에서 전체 Cookie header를 복사해 private cookie file로 저장하는 것입니다. 아래 명령을 실행한 뒤 header를 붙여넣고 `Ctrl-D`로 입력을 끝냅니다.
+읽기 명령은 LinkedIn 웹 세션이 필요합니다. 가장 쉬운 방법은 로그인된 브라우저에서 쿠키를 자동으로 가져오는 것입니다.
 
 ```bash
-linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth login
 linkedin-cli auth-status
 ```
+
+`auth login`은 로그인된 브라우저(Chrome·Brave·Edge·Firefox)에서 쿠키를 추출해 private file(`~/.config/linkedin/cookies.env`, 권한 `600`)에 저장하고 세션을 검증합니다. 자동 추출이 실패하면 DevTools로 직접 복사하는 단계를 출력합니다 — [읽기 인증](#읽기-인증) 참고.
 
 공식 OAuth 권한을 mutation 없이 점검:
 
@@ -328,12 +332,28 @@ linkedin-cli post delete urn:li:share:1234567890 --json
 3. `LINKEDIN_COOKIE_FILE` 또는 기본 파일 `~/.config/linkedin/cookies.env`
 4. Chrome, Chromium, Brave, Edge, Firefox의 브라우저 cookie 추출
 
-권장: 전체 Cookie header를 private file로 저장합니다. 이 명령은 값을 출력하지 않고 파일 권한을 `600`으로 설정합니다.
+**권장: `auth login`으로 자동 캡처.** 로그인된 브라우저에서 쿠키를 추출해 private file(권한 `600`)에 저장하고 세션을 검증합니다. 값은 절대 출력하지 않습니다.
 
 ```bash
-linkedin-cli auth cookie-file --from-stdin
+linkedin-cli auth login
 linkedin-cli auth-status
 ```
+
+자동 추출이 실패하면(macOS는 Chrome·Brave·Edge가 Keychain 접근을 요구 — `--browser firefox`가 가장 안정적) 아래 단계로 직접 캡처합니다.
+
+**수동 캡처 (DevTools):**
+
+1. 브라우저에서 https://www.linkedin.com 에 로그인된 상태를 확인합니다.
+2. DevTools를 엽니다 (macOS `Option+Command+I`, 또는 `F12`).
+3. **Application** 탭 → **Storage** → **Cookies** → `https://www.linkedin.com`.
+4. `li_at`와 `JSESSIONID` 값을 복사합니다 (`JSESSIONID`는 `"ajax:..."` 형태이니 따옴표를 포함해 복사).
+5. 한 줄로 만듭니다: `li_at=<값>; JSESSIONID=<값>`
+6. 저장: `linkedin-cli auth cookie-file --from-stdin`을 실행하고 그 줄을 붙여넣은 뒤 `Return`, `Ctrl-D`.
+7. 검증: `linkedin-cli auth-status`
+
+또는 DevTools **Network** 탭에서 `www.linkedin.com` 요청의 `cookie:` request header 전체를 복사해 같은 명령에 붙여넣어도 됩니다(LinkedIn이 가끔 요구하는 더 완전한 cookie jar).
+
+이 값들은 LinkedIn 비밀번호와 같습니다 — 채팅에 붙여넣거나 커밋·공유하지 마세요.
 
 일회성 env 방식:
 
@@ -481,8 +501,7 @@ print(delete_result.deleted_at)
 
 ## Skills
 
-이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`와 `.claude/skills/`는 이 skill로 연결된 심볼릭 링크입니다.
-플러그인 설치 경로는 [`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json) 메타데이터와 같은 skill을 사용합니다. 설치 후 `$linkedin-cli`를 실행하면 read 인증은 `auth cookie-file --from-stdin` → `auth-status` 순서로 확인합니다.
+이 repo는 셋업, 인증, 읽기/쓰기 워크플로, 명령 선택을 하나로 다루는 project-local [`linkedin-cli`](./.agents/skills/linkedin-cli) skill을 포함합니다. 정본은 [`.agents/skills/linkedin-cli/SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md)이며, `skills/`, `.claude/skills/`, `.codex/skills/`는 이 skill로 연결된 project-local 심볼릭 링크입니다. 플러그인으로도 같은 skill을 설치할 수 있습니다([`.claude-plugin/plugin.json`](./.claude-plugin/plugin.json)). 플러그인은 skill만 제공하므로, skill을 처음 쓸 때 `linkedin-cli` 명령이 없으면 [`scripts/ensure-cli.sh`](./.agents/skills/linkedin-cli/scripts/ensure-cli.sh)가 `agent-linkedin`을 자동 설치합니다. 그 뒤 `auth login` → `auth-status`로 read 인증을 확인합니다.
 
 - [`SKILL.md`](./.agents/skills/linkedin-cli/SKILL.md) — skill entrypoint
 - [initial-setup.md](./.agents/skills/linkedin-cli/references/initial-setup.md) — 첫 셋업과 OAuth/쿠키 인증

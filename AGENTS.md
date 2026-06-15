@@ -20,8 +20,9 @@ surface. Do not confuse them with the official `post.*`/`comment.*`/`reaction.*`
   the read path; `oauth*.py`/`publisher.py`/`api.py` drive the official write path;
   `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` is the Playwright fallback.
 - `.agents/skills/` — source for the `linkedin-cli` agent skill (setup, auth, read, and write
-  workflows in one skill); `skills/` and `.claude/skills/` are symlinks to it. Claude plugin metadata
-  lives in `.claude-plugin/plugin.json`. Edit the source, never the symlinks.
+  workflows in one skill); `skills/`, `.claude/skills/`, and `.codex/skills/` are project-local
+  symlinks to it. Claude plugin metadata lives in `.claude-plugin/plugin.json`. Edit the source,
+  never the symlinks.
 - `tests/` — unit tests; no live LinkedIn session required.
 
 ## Output Contract

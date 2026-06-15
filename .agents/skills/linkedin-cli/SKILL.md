@@ -13,7 +13,7 @@ Use this project-local skill for LinkedIn setup, auth, read workflows, official 
 
 ## Boundaries
 
-- Run commands from the repository root unless the user has installed the package globally.
+- Run commands from the repository root with `uv run linkedin-cli ...`. If the user needs the bare `linkedin-cli` command and `command -v linkedin-cli` is empty, run `bash scripts/ensure-cli.sh` to install `agent-linkedin` (see `references/initial-setup.md`).
 - Treat `read.*` as unofficial: it uses the user's own LinkedIn web session.
 - Treat `post.*`, `comment.*`, `reaction.*`, and `social.*` as official: they use LinkedIn REST APIs with OAuth. Comments, reactions, and social metadata may require Social Feed permissions beyond `w_member_social`.
 - Never print cookies, access tokens, client secrets, passwords, or browser storage-state contents.
@@ -56,6 +56,7 @@ uv run linkedin-cli auth permission-check --json
 | Need | Command |
 |------|---------|
 | Install dependencies | `uv sync --extra dev` |
+| Capture read cookies from a logged-in browser | `uv run linkedin-cli auth login` |
 | Save full read Cookie header privately | `uv run linkedin-cli auth cookie-file --from-stdin` |
 | Verify session and probes | `uv run linkedin-cli auth-status` |
 | Issue official OAuth token | `uv run linkedin-cli auth oauth-login --json --output tmp/linkedin-auth-oauth-login.json` (export `LINKEDIN_CLIENT_ID`/`LINKEDIN_CLIENT_SECRET` first) |

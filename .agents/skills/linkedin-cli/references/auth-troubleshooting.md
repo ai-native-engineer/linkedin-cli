@@ -23,11 +23,11 @@
 Recommended baseline:
 
 ```bash
-uv run linkedin-cli auth cookie-file --from-stdin
+uv run linkedin-cli auth login
 uv run linkedin-cli auth-status
 ```
 
-Paste the full `Cookie` request header into stdin, then press `Ctrl-D`. This keeps the secret out of shell history and writes a private `600` file.
+`auth login` extracts cookies from a logged-in browser and writes a private `600` file. If automatic extraction fails it prints manual DevTools steps; you can also save a pasted full `Cookie` request header with `uv run linkedin-cli auth cookie-file --from-stdin` (then `Ctrl-D`), which keeps the secret out of shell history.
 
 Minimal environment fallback:
 
@@ -133,10 +133,10 @@ Important summary fields:
 
 `No LinkedIn cookies found`
 
-- Run `uv run linkedin-cli auth cookie-file --from-stdin`, or
+- Run `uv run linkedin-cli auth login` to capture cookies from a logged-in browser, or
+- run `uv run linkedin-cli auth cookie-file --from-stdin`, or
 - set `LINKEDIN_COOKIE_HEADER`, or
-- export `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID`, or
-- log into LinkedIn in a supported local browser
+- export `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID`
 
 `LINKEDIN_COOKIE_HEADER was provided but does not include li_at and JSESSIONID`
 
