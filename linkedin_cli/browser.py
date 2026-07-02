@@ -16,12 +16,15 @@ import sys
 import tempfile
 import time
 from typing import Any, Iterable
+from urllib.parse import unquote
 
 from .auth import AuthSession
 from .auth import _auth_session_from_playwright_cookies
 from .config import AppConfig
+from .constants import DEFAULT_BROWSER_PROFILE_DIR
 from .constants import DEFAULT_BROWSER_STATE_FILE
 from .constants import ENV_BROWSER_STATE
+from .constants import ENV_BROWSER_PROFILE_DIR
 from .constants import ENV_PASSWORD
 from .constants import ENV_USERNAME
 from .structmatch import extract_activity_id
@@ -141,16 +144,17 @@ class LinkedInBrowserFallback:
         posts: list[dict[str, object]] = []
         seen: set[str] = set()
         start = 0
-        batch_size = min(target_count, 20)
+        # LinkedIn under-hydrates media fields on very small feed requests.
+        batch_size = min(max(target_count + 10, 15), 100)
 
-        with self._open_page("https://www.linkedin.com/feed/") as page:
+        with self._open_persistent_page("https://www.linkedin.com/feed/") as page:
             for _ in range(5):
                 if len(posts) >= target_count:
                     break
                 payload = _fetch_feed_graphql(
                     page,
                     start=start,
-                    count=min(batch_size, target_count + 5),
+                    count=batch_size,
                 )
                 batch = _parse_feed_graphql_payload(payload)
                 if not batch:
@@ -265,12 +269,39 @@ class LinkedInBrowserFallback:
             context = self._new_context(browser)
             try:
                 page = context.new_page()
-                page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+                _goto_domcontent_loaded(page, url, timeout_ms=timeout_ms)
                 self._ensure_authenticated_page(page, target_url=url, context=context)
                 yield page
             finally:
                 context.close()
                 browser.close()
+
+    @contextmanager
+    def _open_persistent_page(self, url: str):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as exc:  # pragma: no cover - guarded by packaging
+            raise BrowserActionError(
+                "Playwright is not installed. Install it to enable browser fallback."
+            ) from exc
+
+        timeout_ms = int(self.config.rate_limit.timeout * 1000)
+        profile_dir = _browser_profile_dir()
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        with sync_playwright() as playwright:
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                channel="chrome",
+                headless=self.config.browser.headless,
+                args=["--no-first-run", "--no-default-browser-check"],
+            )
+            try:
+                page = context.new_page()
+                _goto_domcontent_loaded(page, url, timeout_ms=timeout_ms)
+                self._ensure_authenticated_page(page, target_url=url, context=context)
+                yield page
+            finally:
+                context.close()
 
     def _new_context(self, browser):
         state_path = _browser_state_path()
@@ -656,10 +687,10 @@ def capture_read_session(
         context = browser.new_context()
         try:
             page = context.new_page()
-            page.goto(
+            _goto_domcontent_loaded(
+                page,
                 "https://www.linkedin.com/feed/",
-                wait_until="domcontentloaded",
-                timeout=nav_timeout_ms,
+                timeout_ms=nav_timeout_ms,
             )
             if not _poll_until_logged_in(page, timeout=login_timeout):
                 return None, (
@@ -678,6 +709,18 @@ def capture_read_session(
     if session is None:
         return None, "Logged in, but li_at + JSESSIONID were not captured. Try again."
     return session, ""
+
+
+def _goto_domcontent_loaded(page, url: str, *, timeout_ms: int) -> None:
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    except Exception as exc:
+        if "ERR_HTTP_RESPONSE_CODE_FAILURE" not in str(exc):
+            raise
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=min(timeout_ms, 5000))
+        except Exception:
+            pass
 
 
 def _poll_until_logged_in(page, *, timeout: float) -> bool:
@@ -699,30 +742,39 @@ def _fetch_feed_graphql(page, *, start: int, count: int) -> dict[str, Any]:
         f"&variables=(start:{start},count:{count},sortOrder:RELEVANCE)"
         f"&queryId={_LINKEDIN_FEED_GRAPHQL_QUERY_ID}"
     )
-    result = page.evaluate(
-        """async (url) => {
-          const csrfMatch = document.cookie.match(/JSESSIONID="?([^;"]+)/);
-          const csrf = csrfMatch ? csrfMatch[1] : '';
-          const response = await fetch(url, {
-            credentials: 'include',
-            headers: {
-              'Accept': 'application/vnd.linkedin.normalized+json+2.1',
-              'csrf-token': csrf,
-              'x-restli-protocol-version': '2.0.0',
-            },
-          });
-          if (!response.ok) {
-            return { error: response.status, url: response.url };
-          }
-          return await response.json();
-        }""",
-        url,
+    csrf = _csrf_token_from_context(page.context)
+    response = page.context.request.get(
+        f"https://www.linkedin.com{url}",
+        headers={
+            "Accept": "application/vnd.linkedin.normalized+json+2.1",
+            "csrf-token": csrf,
+            "x-restli-protocol-version": "2.0.0",
+        },
+        max_redirects=0,
     )
+    if not response.ok:
+        return {"error": response.status, "url": response.url}
+    result = response.json()
     if not isinstance(result, dict):
         raise BrowserActionError("LinkedIn browser feed returned an unexpected payload.")
     if result.get("error"):
         raise BrowserActionError(f"LinkedIn browser feed API returned HTTP {result['error']}.")
     return result
+
+
+def _csrf_token_from_context(context) -> str:
+    try:
+        cookies = context.cookies("https://www.linkedin.com")
+    except Exception:
+        cookies = []
+    for cookie in cookies:
+        if isinstance(cookie, dict) and cookie.get("name") == "JSESSIONID":
+            return unquote(str(cookie.get("value") or "")).strip('"')
+    return ""
+
+
+def _browser_profile_dir() -> Path:
+    return Path(os.getenv(ENV_BROWSER_PROFILE_DIR, DEFAULT_BROWSER_PROFILE_DIR)).expanduser()
 
 
 def _parse_feed_graphql_payload(payload: dict[str, Any]) -> list[dict[str, object]]:
@@ -770,6 +822,7 @@ def _extract_feed_graphql_post(
         "reactionCount": likes,
         "commentCount": comments,
         "shareCount": shares,
+        "_raw": item,
     }
 
 

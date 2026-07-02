@@ -16,7 +16,7 @@ from .auth import resolve_auth_session
 from .auth import validate_auth_session
 from .browser import BrowserActionError, LinkedInBrowserFallback
 from .config import AppConfig
-from .models import Actor, Comment, EngagementMetrics, Post, Profile, ReactionSummary, SearchResult
+from .models import Actor, Comment, EngagementMetrics, MediaAsset, Post, Profile, ReactionSummary, SearchResult
 from .structmatch import extract_activity_id
 from .structmatch import find_first_key
 from .transport import LinkedInTransportError
@@ -368,6 +368,7 @@ class LinkedInClient:
             created_at=self._extract_first(raw, "old", "createdAt", "created_at") or "",
             url=url or "",
             visibility=self._extract_first(raw, "visibility", "audience") or "",
+            media=self._extract_media_assets(raw),
             metrics=EngagementMetrics(
                 reactions=reactions_total,
                 comments=comments_total,
@@ -379,6 +380,106 @@ class LinkedInClient:
             liked_by_viewer=bool(self._extract_first(raw, "likedByViewer", "liked")),
             saved_by_viewer=bool(self._extract_first(raw, "savedByViewer", "saved")),
         )
+
+    def _extract_media_assets(self, raw: dict[str, Any]) -> list[MediaAsset]:
+        assets: list[MediaAsset] = []
+        seen_urls: set[str] = set()
+
+        def add(asset: MediaAsset) -> None:
+            if not asset.url or asset.url in seen_urls:
+                return
+            seen_urls.add(asset.url)
+            assets.append(asset)
+
+        direct_media = raw.get("media") or []
+        if isinstance(direct_media, list):
+            for item in direct_media:
+                if isinstance(item, dict):
+                    add(MediaAsset.from_dict(item))
+
+        def walk(node: Any, path: tuple[str, ...]) -> None:
+            if isinstance(node, dict):
+                vector_asset = self._media_asset_from_vector_image(node, path)
+                if vector_asset:
+                    add(vector_asset)
+                for key, value in node.items():
+                    walk(value, (*path, str(key)))
+            elif isinstance(node, list):
+                for index, item in enumerate(node):
+                    walk(item, (*path, str(index)))
+            elif isinstance(node, str) and self._is_media_url(node, path):
+                add(MediaAsset(kind=self._media_kind(node, path), url=node))
+
+        walk(raw, ())
+        embedded_raw = raw.get("_raw")
+        if isinstance(embedded_raw, dict):
+            walk(embedded_raw, ("_raw",))
+        return assets
+
+    def _media_asset_from_vector_image(
+        self,
+        node: dict[str, Any],
+        path: tuple[str, ...],
+    ) -> MediaAsset | None:
+        if not self._is_post_media_path(path):
+            return None
+        root_url = node.get("rootUrl")
+        artifacts = node.get("artifacts")
+        if not isinstance(root_url, str) or not isinstance(artifacts, list):
+            return None
+
+        candidates: list[tuple[int, str, int | None, int | None]] = []
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                continue
+            segment = artifact.get("fileIdentifyingUrlPathSegment")
+            if not isinstance(segment, str) or not segment:
+                continue
+            width = self._optional_int(artifact.get("width"))
+            height = self._optional_int(artifact.get("height"))
+            score = (width or 0) * (height or 0) or (width or 0)
+            candidates.append((score, f"{root_url}{segment}", width, height))
+
+        if not candidates:
+            return None
+        _, url, width, height = max(candidates, key=lambda item: item[0])
+        return MediaAsset(kind="image", url=url, width=width, height=height)
+
+    def _is_media_url(self, url: str, path: tuple[str, ...]) -> bool:
+        if path and path[-1].lower() == "rooturl":
+            return False
+        if not self._is_post_media_path(path):
+            return False
+        parsed = urlparse(url)
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        host = parsed.netloc.lower()
+        mediaish = (
+            host.endswith("licdn.com")
+            and ("media" in host or "dms" in parsed.path.lower() or "playback" in parsed.path.lower())
+        )
+        return mediaish and not parsed.path.endswith("/")
+
+    def _is_post_media_path(self, path: tuple[str, ...]) -> bool:
+        path_text = ".".join(part.lower() for part in path)
+        if any(blocked in path_text for blocked in ("actor", "author", "profile", "avatar", "logo")):
+            return False
+        return any(
+            marker in path_text
+            for marker in ("content", "media", "image", "photo", "thumbnail", "preview", "video", "stream")
+        )
+
+    def _media_kind(self, url: str, path: tuple[str, ...]) -> str:
+        text = " ".join((*path, url)).lower()
+        if any(marker in text for marker in ("video", "stream", "playback", ".mp4", ".m3u8")):
+            return "video"
+        return "image"
+
+    def _optional_int(self, value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
 
     def _normalize_profile(self, raw: dict[str, Any]) -> Profile:
         full_name = self._extract_first(raw, "fullName", "full_name", "name")

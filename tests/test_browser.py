@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -9,10 +10,12 @@ from linkedin_cli.browser import _SAVED_POSTS_SCRIPT
 from linkedin_cli.browser import _activity_url
 from linkedin_cli.browser import _browser_state_path
 from linkedin_cli.browser import _chrome_launch_candidates
+from linkedin_cli.browser import _fetch_feed_graphql
 from linkedin_cli.browser import _load_login_credentials
 from linkedin_cli.browser import _looks_auto_login_page
 from linkedin_cli.browser import _looks_logged_out
 from linkedin_cli.browser import _launch_browser_for
+from linkedin_cli.browser import _goto_domcontent_loaded
 from linkedin_cli.browser import _menu_contains_any
 from linkedin_cli.browser import _parse_feed_graphql_payload
 from linkedin_cli.browser import _poll_until_logged_in
@@ -44,6 +47,23 @@ def test_launch_browser_for_wraps_missing_firefox_with_install_hint() -> None:
     assert "Unable to launch Firefox" in message
     assert "playwright install firefox" in message
     assert "Executable doesn't exist" in message
+
+
+def test_goto_domcontent_loaded_tolerates_linkedin_http_response_code_failure() -> None:
+    events = []
+
+    class FakePage:
+        def goto(self, *args, **kwargs):
+            events.append(("goto", args, kwargs))
+            raise RuntimeError("Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE")
+
+        def wait_for_load_state(self, state, **kwargs):
+            events.append(("wait_for_load_state", state, kwargs))
+
+    _goto_domcontent_loaded(FakePage(), "https://www.linkedin.com/feed/", timeout_ms=20_000)
+
+    assert events[0][0] == "goto"
+    assert events[1] == ("wait_for_load_state", "domcontentloaded", {"timeout": 5000})
 
 
 def test_unsave_selectors_include_english_and_korean_labels() -> None:
@@ -172,6 +192,73 @@ def test_saved_posts_script_anchors_on_activity_href_not_main_li() -> None:
     assert "main li" not in _SAVED_POSTS_SCRIPT
 
 
+def test_feed_requests_minimum_hydrated_batch(monkeypatch) -> None:
+    subject = object.__new__(LinkedInBrowserFallback)
+    calls = []
+
+    @contextmanager
+    def fake_open_page(url):
+        assert url == "https://www.linkedin.com/feed/"
+        yield object()
+
+    def fake_fetch(page, *, start, count):
+        calls.append((start, count))
+        return {
+            "included": [
+                {
+                    "entityUrn": f"urn:li:activity:{index}",
+                    "commentary": {"text": f"Post body long enough {index}"},
+                    "actor": {"name": {"text": "Jane Doe"}},
+                }
+                for index in range(1, 4)
+            ]
+        }
+
+    subject._open_persistent_page = fake_open_page
+    monkeypatch.setattr("linkedin_cli.browser._fetch_feed_graphql", fake_fetch)
+
+    posts = subject.get_feed_posts(3)
+
+    assert calls == [(0, 15)]
+    assert len(posts) == 3
+    assert posts[0]["_raw"]["entityUrn"] == "urn:li:activity:1"
+
+
+def test_fetch_feed_graphql_uses_context_request_and_cookie_csrf() -> None:
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status = 200
+        url = "https://www.linkedin.com/voyager/api/graphql"
+
+        def json(self):
+            return {"included": []}
+
+    class FakeRequest:
+        def get(self, url, *, headers, max_redirects):
+            assert max_redirects == 0
+            captured["url"] = url
+            captured["headers"] = headers
+            return FakeResponse()
+
+    class FakeContext:
+        request = FakeRequest()
+
+        def cookies(self, url):
+            assert url == "https://www.linkedin.com"
+            return [{"name": "JSESSIONID", "value": '"ajax:123"'}]
+
+    class FakePage:
+        context = FakeContext()
+
+    _fetch_feed_graphql(FakePage(), start=0, count=15)
+
+    assert captured["headers"]["csrf-token"] == "ajax:123"
+    assert captured["url"].startswith("https://www.linkedin.com/voyager/api/graphql")
+    assert "count:15" in captured["url"]
+
+
 class _FakePollPage:
     def __init__(self, url: str, body: str) -> None:
         self.url = url
@@ -291,6 +378,7 @@ def test_parse_feed_graphql_payload_returns_normalizable_posts() -> None:
             "reactionCount": 7,
             "commentCount": 2,
             "shareCount": 1,
+            "_raw": payload["included"][0],
         }
     ]
 
@@ -315,7 +403,7 @@ def test_browser_feed_posts_uses_graphql_fetch(monkeypatch) -> None:
             return False
 
     subject = object.__new__(LinkedInBrowserFallback)
-    subject._open_page = lambda url: seen.append(url) or FakeOpenPage()
+    subject._open_persistent_page = lambda url: seen.append(url) or FakeOpenPage()
     monkeypatch.setattr("linkedin_cli.browser._fetch_feed_graphql", lambda *_args, **_kwargs: payload)
 
     posts = subject.get_feed_posts(1)

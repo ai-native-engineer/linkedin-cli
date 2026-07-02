@@ -119,6 +119,50 @@ def test_feed_uses_browser_context_fetch_path(monkeypatch) -> None:
     assert posts[0].text == "Post from browser fetch"
 
 
+def test_normalize_post_extracts_media_assets_without_actor_avatar() -> None:
+    client = object.__new__(LinkedInClient)
+    post = client._normalize_post(
+        {
+            "entityUrn": "urn:li:activity:1",
+            "commentary": {"text": "Post with media"},
+            "actor": {
+                "name": {"text": "Jane Doe"},
+                "image": {
+                    "vectorImage": {
+                        "rootUrl": "https://media.licdn.com/avatar/",
+                        "artifacts": [{"width": 100, "fileIdentifyingUrlPathSegment": "avatar.jpg"}],
+                    }
+                },
+            },
+            "_raw": {
+                "content": {
+                    "image": {
+                        "vectorImage": {
+                            "rootUrl": "https://media.licdn.com/dms/image/v2/",
+                            "artifacts": [
+                                {"width": 400, "fileIdentifyingUrlPathSegment": "small.jpg"},
+                                {"width": 1200, "fileIdentifyingUrlPathSegment": "large.jpg"},
+                            ],
+                        }
+                    },
+                    "video": {
+                        "playbackStreams": [
+                            {"url": "https://dms.licdn.com/playback/C4E05AQ/video.mp4"}
+                        ]
+                    },
+                }
+            },
+        }
+    )
+
+    assert [(asset.kind, asset.url) for asset in post.media] == [
+        ("image", "https://media.licdn.com/dms/image/v2/large.jpg"),
+        ("video", "https://dms.licdn.com/playback/C4E05AQ/video.mp4"),
+    ]
+    assert post.media[0].width == 1200
+    assert all("avatar" not in asset.url for asset in post.media)
+
+
 def test_react_requires_activity_urn() -> None:
     client = object.__new__(LinkedInClient)
 
