@@ -62,11 +62,16 @@ class LinkedInClient:
             ),
         }
 
-    def feed(self, limit: Optional[int] = None) -> list[Post]:
+    def feed(self, limit: Optional[int] = None, comments_limit: int = 0) -> list[Post]:
         count = self._resolve_limit(limit)
+        if comments_limit < 0:
+            raise LinkedInClientError("--comments must be greater than or equal to 0.")
         return self._retry(
             "feed",
-            lambda: self._normalize_posts(self.browser.get_feed_posts(count)),
+            lambda: self._hydrate_post_comments(
+                self._normalize_posts(self.browser.get_feed_posts(count)),
+                comments_limit=comments_limit,
+            ),
         )
 
     def get_saved_posts(self, limit: Optional[int] = None) -> list[Post]:
@@ -149,11 +154,11 @@ class LinkedInClient:
             raise LinkedInClientError(
                 f"Comment lookup requires an activity URN; got {activity_urn}."
             )
-        activity_id = self._require_activity_id(activity_urn)
+        self._require_activity_id(activity_urn)
         count = self._resolve_limit(limit)
 
         def run() -> list[Comment]:
-            comments = self.api.get_post_comments(activity_id, comment_count=count)
+            comments = self.browser.get_post_comments(activity_urn, count)
             return [
                 self._normalize_comment(item, activity_urn)
                 for item in comments
@@ -340,6 +345,24 @@ class LinkedInClient:
 
     def _normalize_posts(self, raw_posts: Iterable[dict[str, Any]]) -> list[Post]:
         return [self._normalize_post(item) for item in raw_posts if isinstance(item, dict)]
+
+    def _hydrate_post_comments(self, posts: list[Post], *, comments_limit: int) -> list[Post]:
+        if comments_limit <= 0:
+            return posts
+        for post in posts:
+            if post.metrics.comments == 0:
+                continue
+            identifier = post.url or post.urn
+            if not extract_activity_id(identifier):
+                continue
+            self._sleep_request_delay()
+            raw_comments = self.browser.get_post_comments(identifier, comments_limit)
+            post.comments = [
+                self._normalize_comment(item, post.urn)
+                for item in raw_comments
+                if isinstance(item, dict)
+            ][:comments_limit]
+        return posts
 
     def _normalize_post(self, raw: dict[str, Any]) -> Post:
         author_profile = self._extract_first(raw, "author_profile", "authorProfile", "actor.navigationUrl", "url")

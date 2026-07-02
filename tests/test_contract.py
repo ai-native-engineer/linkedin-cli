@@ -30,6 +30,7 @@ def test_envelope_serializes_success_payload(sample_post) -> None:
     assert parsed["data"]["posts"][0]["id"] == "urn:li:activity:999"
     assert parsed["data"]["posts"][0]["created_at"] is None
     assert parsed["data"]["posts"][0]["metrics"]["likes"] == 42
+    assert parsed["data"]["posts"][0]["comments"][0]["text"] == "Looks great"
     assert parsed["data"]["paging"]["has_more"] is False
     assert parsed["error"] is None
 

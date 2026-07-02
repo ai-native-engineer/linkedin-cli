@@ -38,7 +38,7 @@ class FakeClient:
             "full_name": "John Doe",
         }
 
-    def feed(self, limit=None):
+    def feed(self, limit=None, comments_limit=0):
         return [
             Post(
                 urn="urn:li:activity:123456",
@@ -169,11 +169,46 @@ def test_read_feed_json_contract_output(monkeypatch) -> None:
     }
 
 
+def test_read_feed_json_contract_can_include_comments(monkeypatch) -> None:
+    runner = CliRunner()
+
+    class CommentsClient(FakeClient):
+        def feed(self, limit=None, comments_limit=0):
+            assert limit == 3
+            assert comments_limit == 1
+            post = super().feed(limit=limit, comments_limit=comments_limit)[0]
+            post.comments = [
+                Comment(
+                    urn="urn:li:comment:1",
+                    post_urn=post.urn,
+                    author=Actor(name="Commenter", public_id="commenter"),
+                    text="Nice post",
+                    reactions=ReactionSummary(like=2),
+                )
+            ]
+            return [post]
+
+    monkeypatch.setattr("linkedin_cli.cli._client_from_ctx", lambda ctx: CommentsClient())
+
+    result = runner.invoke(cli, ["read", "feed", "--limit", "2", "--comments", "1", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["request"] == {
+        "limit": 2,
+        "cursor": None,
+        "dry_run": False,
+        "comments": 1,
+    }
+    assert payload["data"]["posts"][0]["comments"][0]["text"] == "Nice post"
+    assert payload["data"]["posts"][0]["comments"][0]["metrics"]["likes"] == 2
+
+
 def test_read_feed_cursor_paginates_contract_output(monkeypatch) -> None:
     runner = CliRunner()
 
     class PaginationClient(FakeClient):
-        def feed(self, limit=None):
+        def feed(self, limit=None, comments_limit=0):
             posts = [
                 Post(urn=f"urn:li:activity:{index}", author=Actor(name="Jane Doe"), text=f"Post {index}")
                 for index in range(1, 5)
@@ -391,7 +426,7 @@ def test_read_feed_session_rejected_maps_to_auth_expired(monkeypatch) -> None:
     from linkedin_cli.client import LinkedInClientError
 
     class _RejectingClient:
-        def feed(self, limit=None):
+        def feed(self, limit=None, comments_limit=0):
             raise LinkedInClientError(
                 "feed failed: LinkedIn redirected session-rejected for https://www.linkedin.com/x"
             )

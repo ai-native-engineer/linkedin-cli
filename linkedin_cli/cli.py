@@ -1044,6 +1044,14 @@ def read() -> None:
 @read.command("feed")
 @click.option("--limit", type=int, default=None, help="Maximum number of feed items to fetch.")
 @click.option("--cursor", type=str, default=None, help="Opaque pagination cursor.")
+@click.option(
+    "--comments",
+    "comments_limit",
+    type=int,
+    default=0,
+    show_default=True,
+    help="Number of top comments to include per feed item.",
+)
 @click.option("--json", "as_json", is_flag=True, help="Emit SNS JSON Contract v1.")
 @click.option("--output", "-o", "output_file", type=str, default=None, help="Write JSON output to a file.")
 @click.pass_context
@@ -1051,14 +1059,19 @@ def read_feed(
     ctx: click.Context,
     limit: Optional[int],
     cursor: Optional[str],
+    comments_limit: int,
     as_json: bool,
     output_file: Optional[str],
 ) -> None:
     """Fetch the authenticated home feed."""
     request = _contract_request(limit=limit, cursor=cursor, dry_run=False)
+    if comments_limit:
+        request["comments"] = comments_limit
     try:
+        if comments_limit < 0:
+            raise LinkedInClientError("--comments must be greater than or equal to 0.")
         fetch_limit = _fetch_limit_for_page(limit, cursor)
-        posts = _client_from_ctx(ctx).feed(limit=fetch_limit)
+        posts = _client_from_ctx(ctx).feed(limit=fetch_limit, comments_limit=comments_limit)
         posts, next_cursor, has_more = _page_items(posts, limit=limit, cursor=cursor)
     except Exception as exc:
         if as_json:

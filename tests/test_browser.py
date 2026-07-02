@@ -10,6 +10,7 @@ from linkedin_cli.browser import _SAVED_POSTS_SCRIPT
 from linkedin_cli.browser import _activity_url
 from linkedin_cli.browser import _browser_state_path
 from linkedin_cli.browser import _chrome_launch_candidates
+from linkedin_cli.browser import _fetch_comments
 from linkedin_cli.browser import _fetch_feed_graphql
 from linkedin_cli.browser import _load_login_credentials
 from linkedin_cli.browser import _looks_auto_login_page
@@ -17,6 +18,7 @@ from linkedin_cli.browser import _looks_logged_out
 from linkedin_cli.browser import _launch_browser_for
 from linkedin_cli.browser import _goto_domcontent_loaded
 from linkedin_cli.browser import _menu_contains_any
+from linkedin_cli.browser import _parse_comments_payload
 from linkedin_cli.browser import _parse_feed_graphql_payload
 from linkedin_cli.browser import _poll_until_logged_in
 from linkedin_cli.browser import _save_action_labels
@@ -259,6 +261,48 @@ def test_fetch_feed_graphql_uses_context_request_and_cookie_csrf() -> None:
     assert "count:15" in captured["url"]
 
 
+def test_fetch_comments_uses_context_request_and_cookie_csrf() -> None:
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status = 200
+        url = "https://www.linkedin.com/voyager/api/feed/comments"
+
+        def json(self):
+            return {"included": []}
+
+    class FakeRequest:
+        def get(self, url, *, params, headers, max_redirects):
+            assert max_redirects == 0
+            captured["url"] = url
+            captured["params"] = params
+            captured["headers"] = headers
+            return FakeResponse()
+
+    class FakeContext:
+        request = FakeRequest()
+
+        def cookies(self, url):
+            assert url == "https://www.linkedin.com"
+            return [{"name": "JSESSIONID", "value": '"ajax:123"'}]
+
+    class FakePage:
+        context = FakeContext()
+
+    _fetch_comments(FakePage(), activity_id="7441619761081294848", start=0, count=2)
+
+    assert captured["url"] == "https://www.linkedin.com/voyager/api/feed/comments"
+    assert captured["headers"]["csrf-token"] == "ajax:123"
+    assert captured["params"] == {
+        "count": 2,
+        "start": 0,
+        "q": "comments",
+        "sortOrder": "RELEVANCE",
+        "updateId": "activity:7441619761081294848",
+    }
+
+
 class _FakePollPage:
     def __init__(self, url: str, body: str) -> None:
         self.url = url
@@ -378,6 +422,63 @@ def test_parse_feed_graphql_payload_returns_normalizable_posts() -> None:
             "reactionCount": 7,
             "commentCount": 2,
             "shareCount": 1,
+            "_raw": payload["included"][0],
+        }
+    ]
+
+
+def test_parse_comments_payload_returns_normalizable_comments() -> None:
+    payload = {
+        "data": {
+            "*elements": [
+                "urn:li:fs_objectComment:(7478344581151895552,ugcPost:7478341897019817984)"
+            ]
+        },
+        "included": [
+            {
+                "$type": "com.linkedin.voyager.feed.Comment",
+                "entityUrn": (
+                    "urn:li:fs_objectComment:"
+                    "(7478344581151895552,ugcPost:7478341897019817984)"
+                ),
+                "urn": "urn:li:comment:(ugcPost:7478341897019817984,7478344581151895552)",
+                "commentV2": {"text": "Good tooling removes configuration debt."},
+                "commenterForDashConversion": {
+                    "title": {"text": "Offlo.ai"},
+                    "subtitle": {"text": "Developer tools"},
+                    "navigationUrl": "https://www.linkedin.com/showcase/offlo-ai/posts",
+                    "urn": "urn:li:company:112235351",
+                },
+                "createdTime": 1710000000000,
+            },
+            {
+                "entityUrn": (
+                    "urn:li:fs_socialActivityCounts:"
+                    "urn:li:comment:(ugcPost:7478341897019817984,7478344581151895552)"
+                ),
+                "numLikes": 4,
+                "numComments": 1,
+            },
+        ],
+    }
+
+    comments = _parse_comments_payload(payload, post_urn="urn:li:activity:7478341898143842304")
+
+    assert comments == [
+        {
+            "entityUrn": "urn:li:comment:(ugcPost:7478341897019817984,7478344581151895552)",
+            "postUrn": "urn:li:activity:7478341898143842304",
+            "commentary": {"text": "Good tooling removes configuration debt."},
+            "commenter": {
+                "entityUrn": "urn:li:company:112235351",
+                "publicIdentifier": "",
+                "name": "Offlo.ai",
+                "headline": "Developer tools",
+                "navigationUrl": "https://www.linkedin.com/showcase/offlo-ai/posts",
+            },
+            "createdAt": "2024-03-09T16:00:00+00:00",
+            "numLikes": 4,
+            "numReplies": 1,
             "_raw": payload["included"][0],
         }
     ]

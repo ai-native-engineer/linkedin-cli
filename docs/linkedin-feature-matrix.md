@@ -55,7 +55,7 @@ This matrix defines the target scope for making `linkedin-cli` a full personal L
 
 | Feature | Target command | Status | Notes |
 |---|---|---:|---|
-| Home feed | `read feed` | implemented | Unofficial web session; contract-level offset cursor. |
+| Home feed | `read feed` | implemented | Unofficial web session; contract-level offset cursor; `--comments N` can hydrate top comments per post. |
 | Saved posts | `read saved` | implemented | Unofficial web session; contract-level offset cursor. |
 | Profile | `read profile` | implemented | Unofficial web session. |
 | Search | `read search` | implemented | Unofficial web session; contract-level offset cursor. |

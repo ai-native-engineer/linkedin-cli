@@ -297,6 +297,7 @@ def post_to_contract(post: Post, *, source: str) -> dict[str, Any]:
             }
             for item in post.media
         ],
+        "comments": [comment_to_contract(item, source=source) for item in post.comments],
         "source": source,
         "raw": raw,
     }

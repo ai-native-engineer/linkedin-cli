@@ -119,6 +119,49 @@ def test_feed_uses_browser_context_fetch_path(monkeypatch) -> None:
     assert posts[0].text == "Post from browser fetch"
 
 
+def test_feed_can_hydrate_top_comments_from_browser_context(monkeypatch) -> None:
+    client = object.__new__(LinkedInClient)
+    client.config = load_config()
+    client.config.rate_limit.request_delay = 0
+    calls = []
+
+    class FakeBrowser:
+        def get_feed_posts(self, count):
+            calls.append(("feed", count))
+            return [
+                {
+                    "entityUrn": "urn:li:activity:1",
+                    "commentary": {"text": "Post from browser fetch"},
+                    "author_name": "Jane Doe",
+                    "url": "https://www.linkedin.com/feed/update/urn:li:activity:1/",
+                    "commentCount": 3,
+                }
+            ]
+
+        def get_post_comments(self, identifier, count):
+            calls.append(("comments", identifier, count))
+            return [
+                {
+                    "entityUrn": "urn:li:comment:1",
+                    "commentary": {"text": "Nice post"},
+                    "commenter": {"name": "Commenter", "publicIdentifier": "commenter"},
+                    "numLikes": 2,
+                }
+            ]
+
+    client.browser = FakeBrowser()
+    monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
+
+    posts = client.feed(limit=1, comments_limit=2)
+
+    assert calls == [
+        ("feed", 1),
+        ("comments", "https://www.linkedin.com/feed/update/urn:li:activity:1/", 2),
+    ]
+    assert posts[0].comments[0].text == "Nice post"
+    assert posts[0].comments[0].reactions.like == 2
+
+
 def test_normalize_post_extracts_media_assets_without_actor_avatar() -> None:
     client = object.__new__(LinkedInClient)
     post = client._normalize_post(
@@ -178,10 +221,10 @@ def test_get_comments_fetches_unofficial_activity_comments(monkeypatch) -> None:
     client = object.__new__(LinkedInClient)
     client.config = load_config()
 
-    class FakeAPI:
-        def get_post_comments(self, activity_id, comment_count):
-            assert activity_id == "123"
-            assert comment_count == 2
+    class FakeBrowser:
+        def get_post_comments(self, identifier, count):
+            assert identifier == "urn:li:activity:123"
+            assert count == 2
             return [
                 {
                     "entityUrn": "urn:li:comment:1",
@@ -190,7 +233,7 @@ def test_get_comments_fetches_unofficial_activity_comments(monkeypatch) -> None:
                 }
             ]
 
-    client.api = FakeAPI()
+    client.browser = FakeBrowser()
     monkeypatch.setattr(LinkedInClient, "_sleep_request_delay", lambda self: None)
 
     comments = client.get_comments("urn:li:activity:123", limit=2)

@@ -179,6 +179,22 @@ class LinkedInBrowserFallback:
             raise BrowserActionError("LinkedIn browser feed did not return any posts.")
         return posts[:target_count]
 
+    def get_post_comments(self, identifier: str, count: int) -> list[dict[str, object]]:
+        activity_id = extract_activity_id(identifier)
+        if activity_id is None:
+            raise BrowserActionError(f"Could not extract an activity id from {identifier}.")
+        target_count = max(count, 1)
+        activity_urn = f"urn:li:activity:{activity_id}"
+
+        with self._open_persistent_page(_activity_url(activity_urn)) as page:
+            payload = _fetch_comments(
+                page,
+                activity_id=activity_id,
+                start=0,
+                count=target_count,
+            )
+        return _parse_comments_payload(payload, post_urn=activity_urn)[:target_count]
+
     def toggle_save(self, activity_identifier: str, should_save: bool) -> BrowserActionResult:
         with self._open_page(_activity_url(activity_identifier)) as page:
             self._click_first(
@@ -762,6 +778,36 @@ def _fetch_feed_graphql(page, *, start: int, count: int) -> dict[str, Any]:
     return result
 
 
+def _fetch_comments(page, *, activity_id: str, start: int, count: int) -> dict[str, Any]:
+    csrf = _csrf_token_from_context(page.context)
+    response = page.context.request.get(
+        "https://www.linkedin.com/voyager/api/feed/comments",
+        params={
+            "count": min(max(count, 1), 100),
+            "start": max(start, 0),
+            "q": "comments",
+            "sortOrder": "RELEVANCE",
+            "updateId": f"activity:{activity_id}",
+        },
+        headers={
+            "Accept": "application/vnd.linkedin.normalized+json+2.1",
+            "csrf-token": csrf,
+            "x-restli-protocol-version": "2.0.0",
+        },
+        max_redirects=0,
+    )
+    if not response.ok:
+        raise BrowserActionError(
+            f"LinkedIn browser comments API returned HTTP {response.status}."
+        )
+    result = response.json()
+    if not isinstance(result, dict):
+        raise BrowserActionError("LinkedIn browser comments returned an unexpected payload.")
+    if result.get("error"):
+        raise BrowserActionError(f"LinkedIn browser comments API returned HTTP {result['error']}.")
+    return result
+
+
 def _csrf_token_from_context(context) -> str:
     try:
         cookies = context.cookies("https://www.linkedin.com")
@@ -794,6 +840,135 @@ def _parse_feed_graphql_payload(payload: dict[str, Any]) -> list[dict[str, objec
         if post is not None:
             posts.append(post)
     return posts
+
+
+def _parse_comments_payload(payload: dict[str, Any], *, post_urn: str) -> list[dict[str, object]]:
+    included = payload.get("included")
+    if not isinstance(included, list):
+        return []
+    urn_index = {
+        item.get("entityUrn"): item
+        for item in included
+        if isinstance(item, dict) and item.get("entityUrn")
+    }
+    count_index = _comment_count_index(included, urn_index)
+
+    data = payload.get("data")
+    refs = data.get("*elements") if isinstance(data, dict) else None
+    comments: list[dict[str, object]] = []
+    if isinstance(refs, list) and refs:
+        for ref in refs:
+            item = urn_index.get(str(ref))
+            if isinstance(item, dict) and _looks_like_comment_item(item):
+                comments.append(_extract_comment_item(item, post_urn=post_urn, count_index=count_index))
+        return comments
+
+    for item in included:
+        if isinstance(item, dict) and _looks_like_comment_item(item):
+            comments.append(_extract_comment_item(item, post_urn=post_urn, count_index=count_index))
+    return comments
+
+
+def _extract_comment_item(
+    item: dict[str, Any],
+    *,
+    post_urn: str,
+    count_index: dict[str, dict[str, Any]],
+) -> dict[str, object]:
+    likes, replies = _resolve_comment_engagement(item, count_index)
+    return {
+        "entityUrn": str(item.get("urn") or item.get("entityUrn") or ""),
+        "postUrn": post_urn,
+        "commentary": {"text": _extract_comment_text(item)},
+        "commenter": _extract_comment_actor(item),
+        "createdAt": _coerce_linkedin_timestamp(item.get("createdTime") or item.get("createdAt")),
+        "numLikes": likes,
+        "numReplies": replies,
+        "_raw": item,
+    }
+
+
+def _looks_like_comment_item(item: dict[str, Any]) -> bool:
+    type_value = str(item.get("$type") or "")
+    return (
+        type_value.endswith(".Comment")
+        or "commentV2" in item
+        or "commenterForDashConversion" in item
+    )
+
+
+def _extract_comment_text(item: dict[str, Any]) -> str:
+    for key in ("commentV2", "commentary", "comment", "text"):
+        text = _extract_graphql_text(item.get(key))
+        if text:
+            return text
+    return ""
+
+
+def _extract_comment_actor(item: dict[str, Any]) -> dict[str, object]:
+    actor = (
+        item.get("commenterForDashConversion")
+        or item.get("commenter")
+        or item.get("actor")
+        or {}
+    )
+    if not isinstance(actor, dict):
+        return {}
+    name = _extract_graphql_text(actor.get("title")) or _extract_graphql_text(actor.get("name"))
+    headline = _extract_graphql_text(actor.get("subtitle")) or _extract_graphql_text(
+        actor.get("headline")
+    )
+    return {
+        "entityUrn": str(actor.get("entityUrn") or actor.get("urn") or ""),
+        "publicIdentifier": str(actor.get("publicIdentifier") or actor.get("public_id") or ""),
+        "name": name,
+        "headline": headline,
+        "navigationUrl": str(actor.get("navigationUrl") or actor.get("url") or ""),
+    }
+
+
+def _comment_count_index(
+    included: list[Any],
+    urn_index: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    count_index: dict[str, dict[str, Any]] = {}
+    for item in included:
+        if not isinstance(item, dict):
+            continue
+        entity_urn = str(item.get("entityUrn") or "")
+        if entity_urn.startswith("urn:li:fs_socialActivityCounts:"):
+            count_index[entity_urn.removeprefix("urn:li:fs_socialActivityCounts:")] = item
+
+    for item in included:
+        if not isinstance(item, dict) or not _looks_like_comment_item(item):
+            continue
+        social_urn = str(item.get("*socialDetail") or "")
+        social_detail = urn_index.get(social_urn)
+        if not isinstance(social_detail, dict):
+            continue
+        counts_urn = str(social_detail.get("*totalSocialActivityCounts") or "")
+        counts = urn_index.get(counts_urn)
+        if not isinstance(counts, dict):
+            continue
+        for key in (str(item.get("urn") or ""), str(item.get("entityUrn") or "")):
+            if key:
+                count_index[key] = counts
+    return count_index
+
+
+def _resolve_comment_engagement(
+    item: dict[str, Any],
+    count_index: dict[str, dict[str, Any]],
+) -> tuple[int, int]:
+    counts = count_index.get(str(item.get("urn") or "")) or count_index.get(
+        str(item.get("entityUrn") or "")
+    )
+    if not isinstance(counts, dict):
+        counts = item
+    return (
+        _safe_int(counts.get("numLikes") or counts.get("reactionCount")),
+        _safe_int(counts.get("numComments") or counts.get("numReplies") or counts.get("repliesCount")),
+    )
 
 
 def _extract_feed_graphql_post(
