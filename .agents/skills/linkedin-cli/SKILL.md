@@ -50,7 +50,7 @@ linkedin-cli auth login --via-browser --browser firefox
 ```
 
 Firefox requires the Playwright Firefox build first (`playwright install firefox`).
-`read feed` uses the saved Playwright browser state and GraphQL fetch; `auth-status` still probes the direct HTTP transport.
+`read feed` uses the saved Playwright browser state and GraphQL fetch; `--comments N` hydrates top comments per post through the same browser context. `auth-status` still probes the direct HTTP transport.
 
 Clone path (development):
 
@@ -83,6 +83,7 @@ uv run linkedin-cli auth permission-check --json
 | Check official OAuth permissions | `uv run linkedin-cli auth permission-check --json` |
 | Check post-scoped official permissions | `uv run linkedin-cli auth permission-check --post-id urn:li:ugcPost:123 --json` |
 | Read home feed as SNS contract JSON | `uv run linkedin-cli read feed --limit 10 --json` |
+| Read home feed with top comments | `uv run linkedin-cli read feed --limit 10 --comments 1 --json` |
 | Read saved posts as SNS contract JSON | `uv run linkedin-cli read saved --limit 10 --json` |
 | Dry-run unsave one saved activity | `uv run linkedin-cli saved unsave urn:li:activity:123 --dry-run --json` |
 | Search people and posts | `uv run linkedin-cli read search "AI engineer" --limit 10 --json` |

@@ -18,7 +18,8 @@ surface. Do not confuse them with the official `post.*`/`comment.*`/`reaction.*`
 
 - `linkedin_cli/` — the package. `cli.py` holds the Click commands; `client.py`/`transport.py` drive
   the read path; `oauth*.py`/`publisher.py`/`api.py` drive the official write path;
-  `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` is the Playwright fallback.
+  `contract.py`/`serialization.py` build the `sns-json-v1` envelope; `browser.py` handles
+  Playwright browser-context reads and fallbacks.
 - `.agents/skills/` — source for the `linkedin-cli` agent skill (setup, auth, read, and write
   workflows in one skill); `skills/`, `.claude/skills/`, and `.codex/skills/` are project-local
   symlinks to it. Claude plugin metadata lives in `.claude-plugin/plugin.json`. Edit the source,
@@ -29,6 +30,8 @@ surface. Do not confuse them with the official `post.*`/`comment.*`/`reaction.*`
 
 Every canonical `--json` command emits one `sns-json-v1` envelope (see `contract.py`). Never write
 secrets (cookies, tokens, client secrets) into `request`, `data`, `raw`, or logs.
+`read feed --comments N --json` hydrates up to `N` top comments per post into each post's
+top-level `comments` array; engagement counts remain under `metrics`.
 
 ## Dev Commands
 

@@ -112,6 +112,7 @@ Fetch the authenticated feed:
 ```bash
 uv run linkedin-cli read feed --limit 10
 uv run linkedin-cli read feed --limit 10 --json
+uv run linkedin-cli read feed --limit 10 --comments 1 --json
 uv run linkedin-cli read feed --limit 10 --json --output tmp/feed.json
 ```
 
@@ -333,6 +334,7 @@ Read the latest 20 feed items as JSON:
 
 ```bash
 uv run linkedin-cli read feed --limit 20 --json
+uv run linkedin-cli read feed --limit 20 --comments 1 --json
 ```
 
 Read saved posts and remove one saved item:

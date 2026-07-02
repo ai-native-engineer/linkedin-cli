@@ -127,6 +127,7 @@ Then run read commands:
 
 ```bash
 linkedin-cli read feed --limit 10 --json
+linkedin-cli read feed --limit 10 --comments 1 --json
 linkedin-cli read saved --limit 10 --json
 linkedin-cli read profile your-handle --json
 linkedin-cli read profile-posts your-handle --limit 5 --json
@@ -411,6 +412,7 @@ linkedin-cli auth-status
 linkedin-cli auth oauth-login
 
 linkedin-cli read feed --limit 20 --json
+linkedin-cli read feed --limit 20 --comments 1 --json
 linkedin-cli read saved --limit 20 --json
 linkedin-cli read profile your-handle --json
 linkedin-cli read profile-posts your-handle --limit 5 --json
