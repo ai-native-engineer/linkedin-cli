@@ -103,7 +103,7 @@ linkedin-cli auth login
 linkedin-cli auth-status
 ```
 
-`auth login` extracts cookies from a logged-in browser (Chrome, Chromium, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication). `read feed` does not reuse LinkedIn cookies in a Python HTTP client; it runs a GraphQL fetch inside the saved Playwright browser state.
+`auth login` extracts cookies from a logged-in browser (Chrome, Chromium, Brave, Edge, Firefox), saves them to a private file (`~/.config/linkedin/cookies.env`, mode `600`), and verifies the session. If automatic extraction fails, it prints manual DevTools steps — see [Read Authentication](#read-authentication). `read feed` and the saved-post browser fallback do not rely only on LinkedIn cookies in a Python HTTP client; they read inside the saved Playwright browser state/profile.
 
 If automatic extraction succeeds but LinkedIn Voyager rejects the session with self-redirect/authwall behavior, capture a fresh web session directly:
 

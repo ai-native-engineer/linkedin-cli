@@ -74,7 +74,7 @@ uv run linkedin-cli auth login --via-browser --browser firefox
 ```
 
 Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
-`read feed` uses the saved Playwright browser state and GraphQL fetch; `auth-status` still checks the direct HTTP transport.
+`read feed` uses the saved Playwright browser state and GraphQL fetch; saved-post browser fallback uses the persisted browser profile. `auth-status` still checks the direct HTTP transport.
 
 If automatic capture fails, save a full Cookie header manually without printing it:
 

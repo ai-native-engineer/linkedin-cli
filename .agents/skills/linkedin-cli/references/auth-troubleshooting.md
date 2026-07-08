@@ -38,7 +38,7 @@ uv run linkedin-cli auth login --via-browser --browser firefox
 
 Firefox requires the Playwright Firefox build first (`uv run playwright install firefox`).
 
-The user completes login/2FA/checkpoints in the browser window; the CLI stores the full LinkedIn cookie jar and Playwright browser state privately and never prints cookie values. `read feed` uses browser-context GraphQL fetch; `auth-status` still probes the direct HTTP transport and can be degraded even when browser-context feed works.
+The user completes login/2FA/checkpoints in the browser window; the CLI stores the full LinkedIn cookie jar and Playwright browser state privately and never prints cookie values. `read feed` uses browser-context GraphQL fetch; saved-post browser fallback uses the persisted browser profile. `auth-status` still probes the direct HTTP transport and can be degraded even when browser-context reads work.
 
 Minimal environment fallback:
 

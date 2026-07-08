@@ -131,7 +131,7 @@ class LinkedInBrowserFallback:
         return BrowserActionResult(True, "Comment posted through browser fallback.")
 
     def get_saved_posts(self, count: int) -> list[dict[str, object]]:
-        with self._open_page("https://www.linkedin.com/my-items/saved-posts/") as page:
+        with self._open_persistent_page("https://www.linkedin.com/my-items/saved-posts/") as page:
             page.wait_for_timeout(2000)
             self._scroll_until_saved_count(page, count)
             posts = page.evaluate(_SAVED_POSTS_SCRIPT, count)
@@ -411,7 +411,9 @@ class LinkedInBrowserFallback:
     def _scroll_until_saved_count(self, page, count: int) -> None:
         if count <= 0:
             return
-        for _ in range(5):
+        last_count = -1
+        stagnant_scrolls = 0
+        for _ in range(max(count, 5)):
             current_count = page.evaluate(
                 """
                 () => new Set(
@@ -423,6 +425,13 @@ class LinkedInBrowserFallback:
             )
             if isinstance(current_count, int) and current_count >= count:
                 return
+            if current_count == last_count:
+                stagnant_scrolls += 1
+                if stagnant_scrolls >= 3:
+                    return
+            else:
+                stagnant_scrolls = 0
+                last_count = current_count
             page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
             page.wait_for_timeout(1000)
 

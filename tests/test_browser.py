@@ -226,6 +226,50 @@ def test_feed_requests_minimum_hydrated_batch(monkeypatch) -> None:
     assert posts[0]["_raw"]["entityUrn"] == "urn:li:activity:1"
 
 
+def test_saved_posts_uses_persistent_context_and_scrolls_to_limit() -> None:
+    subject = object.__new__(LinkedInBrowserFallback)
+    seen = []
+
+    class FakePage:
+        loaded_count = 1
+        scrolls = 0
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+        def evaluate(self, script, *args):
+            if script == _SAVED_POSTS_SCRIPT:
+                limit = args[0]
+                return [
+                    {
+                        "entityUrn": f"urn:li:activity:{index}",
+                        "url": f"https://www.linkedin.com/feed/update/urn:li:activity:{index}/",
+                    }
+                    for index in range(1, limit + 1)
+                ]
+            if "window.scrollTo" in script:
+                self.scrolls += 1
+                self.loaded_count += 1
+                return None
+            return self.loaded_count
+
+    page = FakePage()
+
+    @contextmanager
+    def fake_open_page(url):
+        seen.append(url)
+        yield page
+
+    subject._open_persistent_page = fake_open_page
+    subject._open_page = lambda _url: (_ for _ in ()).throw(AssertionError("wrong context"))
+
+    posts = subject.get_saved_posts(7)
+
+    assert seen == ["https://www.linkedin.com/my-items/saved-posts/"]
+    assert page.scrolls == 6
+    assert len(posts) == 7
+
+
 def test_fetch_feed_graphql_uses_context_request_and_cookie_csrf() -> None:
     captured = {}
 
